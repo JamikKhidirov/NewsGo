@@ -1,0 +1,84 @@
+version: 2
+
+project_name: gonews
+
+builds:
+  - id: gonews
+    main: ./cmd/server
+    binary: gonews
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - windows
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: darwin
+        goarch: amd64
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X github.com/gonews/gonews/internal/version.Version={{ .Version }}
+      - -X github.com/gonews/gonews/internal/version.Commit={{ .ShortCommit }}
+      - -X github.com/gonews/gonews/internal/version.BuildDate={{ .Date }}
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    files:
+      - README.md
+      - LICENSE
+      - .env.example
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - "merge conflict"
+      - "Merge pull request"
+  groups:
+    - title: Новые возможности
+      regexp: '^feat'
+      order: 0
+    - title: Исправления
+      regexp: '^fix'
+      order: 1
+    - title: Прочее
+      order: 999
+
+release:
+  draft: false
+  prerelease: auto
+  name_template: "GoNews {{ .Version }}"
+  header: |
+    ## GoNews {{ .Version }}
+
+    Готовые бинарники ниже. Для Windows скачайте
+    `gonews_{{ .Version }}_windows_amd64.zip` и запустите `gonews.exe`.
+  footer: |
+    **Полная документация:** https://github.com/gonews/gonews/tree/main/docs
+
+    Собрано из коммита `{{ .FullCommit }}`.

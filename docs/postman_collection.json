@@ -1,0 +1,982 @@
+{
+  "info": {
+    "_postman_id": "9f2c1e6a-4b7d-4f2a-9c3e-gonews000001",
+    "name": "GoNews API",
+    "description": "Коллекция запросов к GoNews API.\n\nПорядок работы:\n1. Выберите окружение `GoNews Local`.\n2. Выполните `Auth → Регистрация` или `Auth → Вход` — токены сохранятся автоматически.\n3. Остальные запросы используют `{{accessToken}}`.\n\nАдминистративные методы требуют `X-Admin-Token` (переменная `adminToken`)\nили пользователя с ролью `admin`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    },
+    {
+      "key": "adminToken",
+      "value": "devadmin"
+    },
+    {
+      "key": "articleId",
+      "value": ""
+    },
+    {
+      "key": "commentId",
+      "value": ""
+    },
+    {
+      "key": "tagSlug",
+      "value": "ai"
+    },
+    {
+      "key": "deviceToken",
+      "value": "fcm-device-token-1234567890"
+    }
+  ],
+  "item": [
+    {
+      "name": "System",
+      "item": [
+        {
+          "name": "Информация о сервисе",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": ["{{baseUrl}}"],
+              "path": [""]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "health"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Метрики Prometheus",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/metrics",
+              "host": ["{{baseUrl}}"],
+              "path": ["metrics"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Регистрация",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 Created', function () { pm.response.to.have.status(201); });",
+                  "const body = pm.response.json();",
+                  "if (body.data && body.data.accessToken) {",
+                  "  pm.collectionVariables.set('accessToken', body.data.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', body.data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"password123\",\n  \"displayName\": \"Иван\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "register"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Вход",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 OK', function () { pm.response.to.have.status(200); });",
+                  "const body = pm.response.json();",
+                  "if (body.data && body.data.accessToken) {",
+                  "  pm.collectionVariables.set('accessToken', body.data.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', body.data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Обновить токены",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.data && body.data.accessToken) {",
+                  "  pm.collectionVariables.set('accessToken', body.data.accessToken);",
+                  "  pm.collectionVariables.set('refreshToken', body.data.refreshToken);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "refresh"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Выход",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "logout"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "News",
+      "item": [
+        {
+          "name": "Лента новостей",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.data && body.data.length > 0) {",
+                  "  pm.collectionVariables.set('articleId', body.data[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept-Language",
+                "value": "ru"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/news?lang=ru&page=1&limit=20&sort=latest",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "news"],
+              "query": [
+                { "key": "lang", "value": "ru" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" },
+                { "key": "sort", "value": "latest" },
+                { "key": "category", "value": "", "disabled": true },
+                { "key": "source", "value": "", "disabled": true },
+                { "key": "tag", "value": "", "disabled": true },
+                { "key": "q", "value": "", "disabled": true }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Тренды",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/news/trending?lang=ru&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "news", "trending"],
+              "query": [
+                { "key": "lang", "value": "ru" },
+                { "key": "limit", "value": "10" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Карточка материала",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/news/{{articleId}}?lang=ru",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "news", "{{articleId}}"],
+              "query": [{ "key": "lang", "value": "ru" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Поиск",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/search?q=космос&lang=ru&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "search"],
+              "query": [
+                { "key": "q", "value": "космос" },
+                { "key": "lang", "value": "ru" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Taxonomy",
+      "item": [
+        {
+          "name": "Категории",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/categories?lang=ru",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "categories"],
+              "query": [{ "key": "lang", "value": "ru" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Источники",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/sources",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "sources"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Теги",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tags?lang=ru&limit=100",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tags"],
+              "query": [
+                { "key": "lang", "value": "ru" },
+                { "key": "limit", "value": "100" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Тег по слагу",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/tags/{{tagSlug}}?lang=ru",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "tags", "{{tagSlug}}"],
+              "query": [{ "key": "lang", "value": "ru" }]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Profile",
+      "item": [
+        {
+          "name": "Текущий пользователь",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Изменить имя",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"displayName\": \"Иван Петров\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Сменить пароль",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"password123\",\n  \"newPassword\": \"password456\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "password"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Моя статистика",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "stats"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Engagement",
+      "item": [
+        {
+          "name": "Лайк",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/news/{{articleId}}/like",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "news", "{{articleId}}", "like"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Убрать лайк",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/news/{{articleId}}/like",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "news", "{{articleId}}", "like"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "В закладки",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/news/{{articleId}}/bookmark",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "news", "{{articleId}}", "bookmark"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Из закладок",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/news/{{articleId}}/bookmark",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "news", "{{articleId}}", "bookmark"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Комментарии материала",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/news/{{articleId}}/comments?page=1&limit=30",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "news", "{{articleId}}", "comments"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "30" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Добавить комментарий",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.data && body.data.id) { pm.collectionVariables.set('commentId', body.data.id); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Отличная новость!\",\n  \"parentId\": null\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/news/{{articleId}}/comments",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "news", "{{articleId}}", "comments"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Редактировать комментарий",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"body\": \"Обновлённый комментарий\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/comments/{{commentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "comments", "{{commentId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Удалить комментарий",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/comments/{{commentId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "comments", "{{commentId}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Personalization",
+      "item": [
+        {
+          "name": "Персональная лента",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/feed?lang=ru&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "feed"],
+              "query": [
+                { "key": "lang", "value": "ru" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Закладки",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/bookmarks?lang=ru&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "bookmarks"],
+              "query": [
+                { "key": "lang", "value": "ru" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Лайки",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/likes?lang=ru&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "likes"],
+              "query": [
+                { "key": "lang", "value": "ru" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "История",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/history?lang=ru&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "history"],
+              "query": [
+                { "key": "lang", "value": "ru" },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Мои подписки",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/follows?lang=ru",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "follows"],
+              "query": [{ "key": "lang", "value": "ru" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Подписаться на тег",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/follows/{{tagSlug}}?lang=ru",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "follows", "{{tagSlug}}"],
+              "query": [{ "key": "lang", "value": "ru" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Отписаться от тега",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/follows/{{tagSlug}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "follows", "{{tagSlug}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "item": [
+        {
+          "name": "Мои устройства",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/devices",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "devices"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Зарегистрировать устройство",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{deviceToken}}\",\n  \"platform\": \"android\",\n  \"locale\": \"ru\",\n  \"topics\": [\"technology\", \"space\"]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/devices",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "devices"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Удалить устройство",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/devices/{{deviceToken}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "devices", "{{deviceToken}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Уведомления",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/notifications?page=1&limit=30",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "notifications"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "30" },
+                { "key": "unread", "value": "false" }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Непрочитанных",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/notifications/unread-count",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "notifications", "unread-count"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Прочитать все",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/me/notifications/read-all",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "me", "notifications", "read-all"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Статистика",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Admin-Token", "value": "{{adminToken}}" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "stats"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Запустить сбор",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Admin-Token", "value": "{{adminToken}}" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/ingest",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "ingest"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "История сборов",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Admin-Token", "value": "{{adminToken}}" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/ingest-runs?limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "ingest-runs"],
+              "query": [{ "key": "limit", "value": "20" }]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Статистика переводов",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Admin-Token", "value": "{{adminToken}}" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/translation-stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "translation-stats"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Backfill переводов",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Admin-Token", "value": "{{adminToken}}" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"lang\": \"ru\",\n  \"limit\": 500\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/translate/backfill",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "translate", "backfill"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Отправить push",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Admin-Token", "value": "{{adminToken}}" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Главные новости дня\",\n  \"body\": \"Что произошло в мире технологий\",\n  \"articleId\": \"{{articleId}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/push",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "push"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Очистка старых материалов",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "X-Admin-Token", "value": "{{adminToken}}" },
+              { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"beforeDays\": 90\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/admin/purge",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "admin", "purge"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

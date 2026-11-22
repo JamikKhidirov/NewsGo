@@ -1,0 +1,2150 @@
+openapi: 3.0.3
+info:
+  title: GoNews API
+  version: 1.0.0
+  description: |
+    **GoNews** — агрегатор новостей без API-ключей.
+
+    API собирает материалы из RSS-лент и открытых JSON-источников,
+    удаляет дубликаты, автоматически проставляет категории и теги и
+    переводит англоязычные материалы на русский язык.
+
+    ## Формат ответов
+
+    Успешные ответы оборачиваются в конверт `{"data": ...}`.
+    Списки дополнительно содержат `meta` с информацией о пагинации.
+    Ошибки имеют вид `{"error": {"code": "...", "message": "..."}}`.
+
+    ## Авторизация
+
+    * Пользовательские методы — `Authorization: Bearer <accessToken>`.
+    * Административные методы — `Authorization: Bearer <accessToken>`
+      пользователя с ролью `admin` **или** заголовок `X-Admin-Token`.
+
+    ## Язык
+
+    Параметр `lang` (или заголовок `Accept-Language`) задаёт язык выдачи.
+    По умолчанию используется `ru`. Если перевод ещё не готов, возвращается
+    оригинальный текст, а `translation.status` равен `pending`.
+
+    ## Ограничения
+
+    Лимит запросов — 180 запросов в минуту с одного IP (настраивается).
+    Для `/auth/*` действует отдельный лимит — 20 попыток в минуту.
+  contact:
+    name: GoNews
+    url: https://github.com/gonews/gonews
+  license:
+    name: MIT
+servers:
+  - url: http://localhost:8080
+    description: Локальная разработка
+  - url: https://api.gonews.example
+    description: Продакшен (пример)
+tags:
+  - name: System
+    description: Служебные методы, документация и метрики
+  - name: News
+    description: Лента, поиск, тренды и карточка материала
+  - name: Taxonomy
+    description: Категории, источники и теги
+  - name: Auth
+    description: Регистрация, вход и обновление токенов
+  - name: Profile
+    description: Профиль пользователя и его активность
+  - name: Engagement
+    description: Лайки, закладки, просмотры и комментарии
+  - name: Personalization
+    description: Персональная лента, подписки и сохранённое
+  - name: Notifications
+    description: Push-устройства и внутренний фид уведомлений
+  - name: Admin
+    description: Служебные операции (нужна роль admin или X-Admin-Token)
+
+security:
+  - BearerAuth: []
+
+paths:
+  /:
+    get:
+      tags: [System]
+      summary: Информация о сервисе
+      security: []
+      responses:
+        '200':
+          description: Название, версия и ссылки на документацию
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RootInfo'
+              example:
+                name: GoNews API
+                version: 1.0.0
+                build: 1.0.0 (abc1234, 2026-01-01T00:00:00Z)
+                docs: http://localhost:8080/docs
+                openapi: http://localhost:8080/docs/openapi.yaml
+                health: http://localhost:8080/healthz
+                languages: [ru, en]
+                time: '2026-01-01T00:00:00Z'
+
+  /healthz:
+    get:
+      tags: [System]
+      summary: Проверка живости (liveness)
+      security: []
+      responses:
+        '200':
+          description: Сервис работает
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /readyz:
+    get:
+      tags: [System]
+      summary: Проверка готовности (readiness)
+      security: []
+      responses:
+        '200':
+          description: Сервис готов принимать трафик
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ready
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /metrics:
+    get:
+      tags: [System]
+      summary: Метрики Prometheus
+      security: []
+      responses:
+        '200':
+          description: Текст в формате Prometheus
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /docs:
+    get:
+      tags: [System]
+      summary: Swagger UI
+      security: []
+      responses:
+        '200':
+          description: HTML-страница Swagger UI
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /docs/openapi.yaml:
+    get:
+      tags: [System]
+      summary: OpenAPI-спецификация
+      security: []
+      responses:
+        '200':
+          description: YAML-спецификация
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  /api/v1/health:
+    get:
+      tags: [System]
+      summary: Проверка состояния API и базы данных
+      security: []
+      responses:
+        '200':
+          description: Всё в порядке
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/v1/categories:
+    get:
+      tags: [Taxonomy]
+      summary: Список категорий
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Lang'
+      responses:
+        '200':
+          description: Категории с локализованными названиями
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Category'
+              example:
+                data:
+                  - slug: world
+                    name: В мире
+                  - slug: technology
+                    name: Технологии
+
+  /api/v1/sources:
+    get:
+      tags: [Taxonomy]
+      summary: Список источников
+      security: []
+      responses:
+        '200':
+          description: Источники, известные базе
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Source'
+
+  /api/v1/tags:
+    get:
+      tags: [Taxonomy]
+      summary: Популярные теги
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Lang'
+        - name: limit
+          in: query
+          description: Максимальное число тегов
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        '200':
+          description: Теги с количеством материалов
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TagCount'
+
+  /api/v1/tags/{slug}:
+    get:
+      tags: [Taxonomy]
+      summary: Тег по слагу
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/Lang'
+      responses:
+        '200':
+          description: Тег
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Tag'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/news:
+    get:
+      tags: [News]
+      summary: Лента новостей
+      description: |
+        Основной метод для мобильного клиента. Возвращает объединённый поток
+        из всех источников с фильтрами и пагинацией.
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Lang'
+        - name: category
+          in: query
+          description: Слаг категории (см. `/api/v1/categories`)
+          schema:
+            type: string
+            example: technology
+        - name: source
+          in: query
+          description: Слаг источника (см. `/api/v1/sources`)
+          schema:
+            type: string
+            example: habr
+        - name: tag
+          in: query
+          description: Слаг тега
+          schema:
+            type: string
+            example: ai
+        - name: q
+          in: query
+          description: Полнотекстовый поиск по заголовку и описанию
+          schema:
+            type: string
+            example: нейросети
+        - name: sort
+          in: query
+          description: Порядок сортировки
+          schema:
+            type: string
+            enum: [latest, hot, trending, oldest]
+            default: latest
+        - name: since
+          in: query
+          description: Нижняя граница даты публикации — Go-длительность (`24h`) или RFC3339
+          schema:
+            type: string
+            example: 24h
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Страница ленты
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/news/trending:
+    get:
+      tags: [News]
+      summary: Тренды за последние 7 дней
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Lang'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+        - name: since
+          in: query
+          description: Переопределить окно трендов (по умолчанию 7 дней)
+          schema:
+            type: string
+            example: 48h
+      responses:
+        '200':
+          description: Популярные материалы
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleListResponse'
+
+  /api/v1/news/{id}:
+    get:
+      tags: [News]
+      summary: Карточка материала
+      description: |
+        Возвращает полный текст, теги, статистику и похожие материалы.
+        Каждый вызов увеличивает счётчик просмотров.
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/ArticleID'
+        - $ref: '#/components/parameters/Lang'
+      responses:
+        '200':
+          description: Материал
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Article'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/news/{id}/comments:
+    get:
+      tags: [Engagement]
+      summary: Комментарии к материалу
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ArticleID'
+        - $ref: '#/components/parameters/Page'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 30
+      responses:
+        '200':
+          description: Страница комментариев
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CommentListResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/search:
+    get:
+      tags: [News]
+      summary: Поиск по материалам
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Поисковый запрос, минимум 2 символа
+          schema:
+            type: string
+            minLength: 2
+            example: космос
+        - $ref: '#/components/parameters/Lang'
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [latest, hot, trending, oldest]
+            default: latest
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Результаты поиска
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/auth/register:
+    post:
+      tags: [Auth]
+      summary: Регистрация
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+            example:
+              email: user@example.com
+              password: password123
+              displayName: Иван
+      responses:
+        '201':
+          description: Пользователь создан, выдана пара токенов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPairResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: Email уже занят
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: email_taken
+                  message: email is already registered
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Вход по email и паролю
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            example:
+              email: user@example.com
+              password: password123
+      responses:
+        '200':
+          description: Пара токенов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPairResponse'
+        '401':
+          description: Неверные учётные данные
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: invalid_credentials
+                  message: invalid email or password
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Обновление access-токена
+      description: 'Refresh-токен одноразовый: при обновлении выдаётся новая пара.'
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Новая пара токенов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenPairResponse'
+        '401':
+          description: Refresh-токен недействителен или истёк
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Выход (отзыв refresh-токена)
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '204':
+          description: Токен отозван
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/v1/me:
+    get:
+      tags: [Profile]
+      summary: Текущий пользователь и статистика
+      responses:
+        '200':
+          description: Профиль
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    patch:
+      tags: [Profile]
+      summary: Изменить отображаемое имя
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [displayName]
+              properties:
+                displayName:
+                  type: string
+                  minLength: 2
+                  maxLength: 50
+                  example: Иван Петров
+      responses:
+        '200':
+          description: Обновлённый пользователь
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/me/password:
+    post:
+      tags: [Profile]
+      summary: Сменить пароль
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword:
+                  type: string
+                  format: password
+                newPassword:
+                  type: string
+                  format: password
+                  minLength: 8
+      responses:
+        '200':
+          description: Пароль изменён
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      updated:
+                        type: boolean
+                        example: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/me/stats:
+    get:
+      tags: [Profile]
+      summary: Счётчики активности
+      responses:
+        '200':
+          description: Статистика пользователя
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/UserStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/me/feed:
+    get:
+      tags: [Personalization]
+      summary: Персональная лента
+      description: |
+        Материалы по тегам, на которые подписан пользователь. Если подписок
+        нет или по ним ничего не найдено, возвращается общая лента.
+      parameters:
+        - $ref: '#/components/parameters/Lang'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Страница персональной ленты
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/me/bookmarks:
+    get:
+      tags: [Personalization]
+      summary: Сохранённые материалы
+      parameters:
+        - $ref: '#/components/parameters/Lang'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Закладки пользователя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/me/likes:
+    get:
+      tags: [Personalization]
+      summary: Лайкнутые материалы
+      parameters:
+        - $ref: '#/components/parameters/Lang'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Лайки пользователя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/me/history:
+    get:
+      tags: [Personalization]
+      summary: История просмотров
+      parameters:
+        - $ref: '#/components/parameters/Lang'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Просмотренные материалы
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArticleListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/me/follows:
+    get:
+      tags: [Personalization]
+      summary: Подписки на теги
+      parameters:
+        - $ref: '#/components/parameters/Lang'
+      responses:
+        '200':
+          description: Теги, на которые подписан пользователь
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Tag'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/me/follows/{slug}:
+    put:
+      tags: [Personalization]
+      summary: Подписаться на тег
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+        - $ref: '#/components/parameters/Lang'
+      responses:
+        '200':
+          description: Подписка оформлена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      following:
+                        type: boolean
+                        example: true
+                      tag:
+                        $ref: '#/components/schemas/Tag'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Personalization]
+      summary: Отписаться от тега
+      parameters:
+        - $ref: '#/components/parameters/Slug'
+      responses:
+        '200':
+          description: Подписка отменена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      following:
+                        type: boolean
+                        example: false
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/me/devices:
+    get:
+      tags: [Notifications]
+      summary: Зарегистрированные устройства
+      responses:
+        '200':
+          description: Список устройств
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Device'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Notifications]
+      summary: Зарегистрировать push-устройство
+      description: |
+        Токен FCM (Android/iOS/Web). Повторная регистрация того же токена
+        обновляет запись и время последней активности.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceRequest'
+            example:
+              token: fcm-device-token-1234567890
+              platform: android
+              locale: ru
+              topics: [technology, space]
+      responses:
+        '201':
+          description: Устройство сохранено
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Device'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/me/devices/{token}:
+    delete:
+      tags: [Notifications]
+      summary: Удалить устройство
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Устройство удалено
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/me/notifications:
+    get:
+      tags: [Notifications]
+      summary: Внутренний фид уведомлений
+      parameters:
+        - name: unread
+          in: query
+          description: Только непрочитанные (`true` или `1`)
+          schema:
+            type: boolean
+            default: false
+        - $ref: '#/components/parameters/Page'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 30
+      responses:
+        '200':
+          description: Страница уведомлений
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/me/notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Количество непрочитанных
+      responses:
+        '200':
+          description: Счётчик
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      unread:
+                        type: integer
+                        example: 3
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/me/notifications/{id}/read:
+    post:
+      tags: [Notifications]
+      summary: Отметить уведомление прочитанным
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Отмечено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      read:
+                        type: boolean
+                        example: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/me/notifications/read-all:
+    post:
+      tags: [Notifications]
+      summary: Отметить все уведомления прочитанными
+      responses:
+        '200':
+          description: Сколько записей обновлено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      marked:
+                        type: integer
+                        format: int64
+                        example: 12
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/news/{id}/like:
+    post:
+      tags: [Engagement]
+      summary: Поставить лайк
+      parameters:
+        - $ref: '#/components/parameters/ArticleID'
+      responses:
+        '200':
+          description: Лайк учтён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LikeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Engagement]
+      summary: Убрать лайк
+      parameters:
+        - $ref: '#/components/parameters/ArticleID'
+      responses:
+        '200':
+          description: Лайк снят
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LikeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/news/{id}/bookmark:
+    post:
+      tags: [Engagement]
+      summary: Добавить в закладки
+      parameters:
+        - $ref: '#/components/parameters/ArticleID'
+      responses:
+        '200':
+          description: Добавлено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookmarkResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Engagement]
+      summary: Удалить из закладок
+      parameters:
+        - $ref: '#/components/parameters/ArticleID'
+      responses:
+        '200':
+          description: Удалено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookmarkResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/v1/news/{id}/view:
+    post:
+      tags: [Engagement]
+      summary: Зафиксировать просмотр
+      description: Используется клиентом, если карточка открыта без GET `/news/{id}`.
+      parameters:
+        - $ref: '#/components/parameters/ArticleID'
+      responses:
+        '204':
+          description: Просмотр учтён
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/news/{id}/comments:
+    post:
+      tags: [Engagement]
+      summary: Добавить комментарий
+      parameters:
+        - $ref: '#/components/parameters/ArticleID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentRequest'
+      responses:
+        '201':
+          description: Комментарий создан
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Comment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/comments/{id}:
+    patch:
+      tags: [Engagement]
+      summary: Редактировать комментарий
+      parameters:
+        - $ref: '#/components/parameters/CommentID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+      responses:
+        '200':
+          description: Обновлено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      updated:
+                        type: boolean
+                        example: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Engagement]
+      summary: Удалить комментарий
+      description: Автор удаляет свой комментарий, администратор — любой.
+      parameters:
+        - $ref: '#/components/parameters/CommentID'
+      responses:
+        '204':
+          description: Удалено
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/v1/admin/ingest:
+    post:
+      tags: [Admin]
+      summary: Запустить сбор новостей
+      description: |
+        Синхронно опрашивает все источники. Одновременно может выполняться
+        только один запуск. После завершения будит воркер переводов.
+      security:
+        - BearerAuth: []
+        - AdminToken: []
+      responses:
+        '200':
+          description: Статистика запуска
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/IngestStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Сбор уже выполняется
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error:
+                  code: ingest_running
+                  message: ingestion is already running
+
+  /api/v1/admin/ingest-runs:
+    get:
+      tags: [Admin]
+      summary: История запусков сбора
+      security:
+        - BearerAuth: []
+        - AdminToken: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Последние запуски
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/IngestRun'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/translate/backfill:
+    post:
+      tags: [Admin]
+      summary: Поставить переводы в очередь
+      security:
+        - BearerAuth: []
+        - AdminToken: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                lang:
+                  type: string
+                  default: ru
+                  example: ru
+                limit:
+                  type: integer
+                  minimum: 1
+                  maximum: 5000
+                  default: 500
+      responses:
+        '200':
+          description: Сколько задач добавлено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      queued:
+                        type: integer
+                        example: 120
+                      lang:
+                        type: string
+                        example: ru
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/translation-stats:
+    get:
+      tags: [Admin]
+      summary: Статистика переводов
+      security:
+        - BearerAuth: []
+        - AdminToken: []
+      responses:
+        '200':
+          description: Счётчики задач
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/TranslationStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/push:
+    post:
+      tags: [Admin]
+      summary: Отправить push
+      description: |
+        Если указан `userId` — только этому пользователю, иначе всем
+        устройствам. Без настроенного FCM сообщение логируется (dry-run),
+        но запись во внутреннем фиде всё равно создаётся.
+      security:
+        - BearerAuth: []
+        - AdminToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPushRequest'
+            example:
+              title: Главные новости дня
+              body: Что произошло в мире технологий
+              articleId: a_abc123
+      responses:
+        '200':
+          description: Результат доставки
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/SendResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '502':
+          description: Ошибка провайдера push
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/admin/stats:
+    get:
+      tags: [Admin]
+      summary: Сводная статистика сервиса
+      security:
+        - BearerAuth: []
+        - AdminToken: []
+      responses:
+        '200':
+          description: Счётчики и последний запуск
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AdminStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/v1/admin/purge:
+    post:
+      tags: [Admin]
+      summary: Удалить старые материалы
+      security:
+        - BearerAuth: []
+        - AdminToken: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                beforeDays:
+                  type: integer
+                  minimum: 7
+                  default: 90
+      responses:
+        '200':
+          description: Сколько материалов удалено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      deleted:
+                        type: integer
+                        format: int64
+                        example: 42
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Access-токен, полученный в `/api/v1/auth/login`.
+    AdminToken:
+      type: apiKey
+      in: header
+      name: X-Admin-Token
+      description: Сервисный токен администратора (переменная `GONEWS_ADMIN_TOKEN`).
+
+  parameters:
+    Lang:
+      name: lang
+      in: query
+      description: Язык выдачи (`ru` или `en`). По умолчанию `ru`.
+      schema:
+        type: string
+        enum: [ru, en]
+        default: ru
+    Page:
+      name: page
+      in: query
+      description: Номер страницы, начиная с 1
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    Limit:
+      name: limit
+      in: query
+      description: Размер страницы (1–100)
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+    Slug:
+      name: slug
+      in: path
+      required: true
+      description: Слаг тега
+      schema:
+        type: string
+        example: ai
+    ArticleID:
+      name: id
+      in: path
+      required: true
+      description: Идентификатор материала
+      schema:
+        type: string
+        example: a_01J8Z5YQ4M6T7K8N9P0R1S2T3V
+    CommentID:
+      name: id
+      in: path
+      required: true
+      description: Идентификатор комментария
+      schema:
+        type: string
+        example: c_01J8Z5YQ4M6T7K8N9P0R1S2T3V
+
+  responses:
+    BadRequest:
+      description: Некорректный запрос
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: validation_error
+              message: invalid request body
+    Unauthorized:
+      description: Требуется авторизация
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: unauthorized
+              message: authentication required
+    Forbidden:
+      description: Недостаточно прав
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: forbidden
+              message: administrator role required
+    NotFound:
+      description: Ресурс не найден
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: not_found
+              message: resource not found
+    RateLimited:
+      description: Слишком много запросов
+      headers:
+        Retry-After:
+          schema:
+            type: string
+          description: Секунд до следующей попытки
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: rate_limited
+              message: too many requests, try again later
+    ServiceUnavailable:
+      description: Сервис недоступен
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error:
+              code: db_unavailable
+              message: database is unavailable
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: validation_error
+            message:
+              type: string
+              example: invalid request body
+
+    Health:
+      type: object
+      required: [status, version, time]
+      properties:
+        status:
+          type: string
+          example: ok
+        version:
+          type: string
+          example: 1.0.0
+        time:
+          type: string
+          format: date-time
+
+    RootInfo:
+      type: object
+      properties:
+        name:
+          type: string
+          example: GoNews API
+        version:
+          type: string
+          example: 1.0.0
+        build:
+          type: string
+          example: 1.0.0 (abc1234, 2026-01-01T00:00:00Z)
+        docs:
+          type: string
+          format: uri
+        openapi:
+          type: string
+          format: uri
+        health:
+          type: string
+          format: uri
+        languages:
+          type: array
+          items:
+            type: string
+          example: [ru, en]
+        time:
+          type: string
+          format: date-time
+
+    Meta:
+      type: object
+      required: [page, limit, total, totalPages]
+      properties:
+        page:
+          type: integer
+          example: 1
+        limit:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          example: 184
+        totalPages:
+          type: integer
+          example: 10
+
+    Category:
+      type: object
+      required: [slug, name]
+      properties:
+        slug:
+          type: string
+          example: world
+        name:
+          type: string
+          example: В мире
+
+    Source:
+      type: object
+      properties:
+        id:
+          type: string
+          example: s_hackernews
+        slug:
+          type: string
+          example: hackernews
+        name:
+          type: string
+          example: Hacker News
+        homepage:
+          type: string
+          format: uri
+          example: https://news.ycombinator.com
+        kind:
+          type: string
+          example: json
+        lang:
+          type: string
+          example: en
+
+    Tag:
+      type: object
+      required: [slug, name, nameRu, nameEn]
+      properties:
+        slug:
+          type: string
+          example: ai
+        name:
+          type: string
+          description: Название на языке выдачи
+          example: Искусственный интеллект
+        nameRu:
+          type: string
+          example: Искусственный интеллект
+        nameEn:
+          type: string
+          example: AI
+
+    TagCount:
+      allOf:
+        - $ref: '#/components/schemas/Tag'
+        - type: object
+          properties:
+            count:
+              type: integer
+              example: 17
+
+    ArticleStats:
+      type: object
+      properties:
+        likes:
+          type: integer
+          example: 12
+        comments:
+          type: integer
+          example: 3
+        views:
+          type: integer
+          example: 250
+
+    Translation:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Состояние перевода
+          enum: [original, ready, pending, failed]
+          example: ready
+        provider:
+          type: string
+          description: Провайдер перевода
+          example: google
+
+    Article:
+      type: object
+      required: [id, title, summary, url, lang, originalLang, category, tags, publishedAt, fetchedAt, stats, liked, bookmarked, translation]
+      properties:
+        id:
+          type: string
+          example: a_01J8Z5YQ4M6T7K8N9P0R1S2T3V
+        title:
+          type: string
+          example: NASA запустила новый телескоп
+        summary:
+          type: string
+          example: Аппарат будет изучать атмосферы экзопланет.
+        content:
+          type: string
+          description: Полный текст (только в карточке материала)
+        url:
+          type: string
+          format: uri
+          example: https://www.nasa.gov/news/example
+        imageUrl:
+          type: string
+          format: uri
+        author:
+          type: string
+        lang:
+          type: string
+          description: Язык выдачи
+          example: ru
+        originalLang:
+          type: string
+          description: Язык оригинала
+          example: en
+        category:
+          type: string
+          example: space
+        source:
+          $ref: '#/components/schemas/Source'
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+        publishedAt:
+          type: string
+          format: date-time
+        fetchedAt:
+          type: string
+          format: date-time
+        stats:
+          $ref: '#/components/schemas/ArticleStats'
+        liked:
+          type: boolean
+        bookmarked:
+          type: boolean
+        translation:
+          $ref: '#/components/schemas/Translation'
+        related:
+          type: array
+          description: Похожие материалы (только в карточке)
+          items:
+            $ref: '#/components/schemas/Article'
+
+    ArticleListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Article'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    User:
+      type: object
+      required: [id, email, displayName, role, createdAt]
+      properties:
+        id:
+          type: string
+          example: u_01J8Z5YQ4M6T7K8N9P0R1S2T3V
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        displayName:
+          type: string
+          example: Иван
+        role:
+          type: string
+          enum: [user, admin]
+          example: user
+        createdAt:
+          type: string
+          format: date-time
+
+    UserStats:
+      type: object
+      properties:
+        likes:
+          type: integer
+          example: 5
+        bookmarks:
+          type: integer
+          example: 2
+        comments:
+          type: integer
+          example: 1
+        follows:
+          type: integer
+          example: 4
+
+    TokenPair:
+      type: object
+      required: [accessToken, refreshToken, tokenType, expiresIn, user]
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        tokenType:
+          type: string
+          example: Bearer
+        expiresIn:
+          type: integer
+          description: Время жизни access-токена в секундах
+          example: 1800
+        user:
+          $ref: '#/components/schemas/User'
+
+    TokenPairResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/TokenPair'
+
+    UserResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/User'
+
+    MeResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [user, stats]
+          properties:
+            user:
+              $ref: '#/components/schemas/User'
+            stats:
+              $ref: '#/components/schemas/UserStats'
+
+    RegisterRequest:
+      type: object
+      required: [email, password, displayName]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+        displayName:
+          type: string
+          minLength: 2
+          maxLength: 50
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    Comment:
+      type: object
+      properties:
+        id:
+          type: string
+          example: c_01J8Z5YQ4M6T7K8N9P0R1S2T3V
+        articleId:
+          type: string
+        userId:
+          type: string
+        parentId:
+          type: string
+          nullable: true
+        body:
+          type: string
+        authorName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        deleted:
+          type: boolean
+
+    CommentRequest:
+      type: object
+      required: [body]
+      properties:
+        body:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          example: Отличная новость!
+        parentId:
+          type: string
+          nullable: true
+          description: ID родительского комментария для ответа
+
+    CommentListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Comment'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    Device:
+      type: object
+      properties:
+        id:
+          type: string
+          example: d_01J8Z5YQ4M6T7K8N9P0R1S2T3V
+        userId:
+          type: string
+        token:
+          type: string
+        platform:
+          type: string
+          enum: [android, ios, web]
+        locale:
+          type: string
+          example: ru
+        topics:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        lastSeenAt:
+          type: string
+          format: date-time
+
+    DeviceRequest:
+      type: object
+      required: [token]
+      properties:
+        token:
+          type: string
+          minLength: 10
+          maxLength: 4096
+        platform:
+          type: string
+          enum: [android, ios, web]
+          default: android
+        locale:
+          type: string
+          default: ru
+        topics:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            maxLength: 50
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          example: breaking
+        title:
+          type: string
+        body:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+        articleId:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        read:
+          type: boolean
+
+    NotificationListResponse:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    LikeResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            liked:
+              type: boolean
+            likesCount:
+              type: integer
+
+    BookmarkResponse:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            bookmarked:
+              type: boolean
+
+    ProviderResult:
+      type: object
+      properties:
+        fetched:
+          type: integer
+        inserted:
+          type: integer
+        updated:
+          type: integer
+        error:
+          type: string
+
+    IngestStats:
+      type: object
+      properties:
+        runId:
+          type: integer
+          format: int64
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        durationMs:
+          type: integer
+          format: int64
+        fetched:
+          type: integer
+        inserted:
+          type: integer
+        updated:
+          type: integer
+        errors:
+          type: integer
+        providers:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/ProviderResult'
+
+    IngestRun:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        status:
+          type: string
+          example: ok
+        fetched:
+          type: integer
+        inserted:
+          type: integer
+        updated:
+          type: integer
+        errors:
+          type: integer
+        details:
+          type: string
+
+    TranslationStats:
+      type: object
+      properties:
+        pending:
+          type: integer
+        failed:
+          type: integer
+        done:
+          type: integer
+
+    AdminPushRequest:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        body:
+          type: string
+          maxLength: 500
+        articleId:
+          type: string
+        userId:
+          type: string
+          description: Если пусто — рассылка всем устройствам
+
+    SendResult:
+      type: object
+      properties:
+        targets:
+          type: integer
+        sent:
+          type: integer
+        failed:
+          type: integer
+
+    AdminStats:
+      type: object
+      properties:
+        articles:
+          type: integer
+        users:
+          type: integer
+        comments:
+          type: integer
+        tags:
+          type: integer
+        translation:
+          $ref: '#/components/schemas/TranslationStats'
+        lastIngest:
+          allOf:
+            - $ref: '#/components/schemas/IngestRun'
+          nullable: true
+        uptimeSeconds:
+          type: integer
+        version:
+          type: string

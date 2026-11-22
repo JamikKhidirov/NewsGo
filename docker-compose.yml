@@ -1,0 +1,57 @@
+services:
+  gonews:
+    build:
+      context: .
+      args:
+        VERSION: ${GONEWS_VERSION:-dev}
+    image: gonews:${GONEWS_VERSION:-dev}
+    container_name: gonews
+    restart: unless-stopped
+    ports:
+      - "${GONEWS_PORT:-8080}:8080"
+    environment:
+      GONEWS_ENV: ${GONEWS_ENV:-production}
+      GONEWS_HTTP_ADDR: ":8080"
+      GONEWS_PUBLIC_BASE_URL: ${GONEWS_PUBLIC_BASE_URL:-http://localhost:8080}
+      GONEWS_DB_PATH: /data/gonews.db
+      GONEWS_JWT_SECRET: ${GONEWS_JWT_SECRET:-change-me-in-production}
+      GONEWS_ADMIN_TOKEN: ${GONEWS_ADMIN_TOKEN:-}
+      GONEWS_ADMIN_EMAILS: ${GONEWS_ADMIN_EMAILS:-}
+      GONEWS_CORS_ORIGINS: ${GONEWS_CORS_ORIGINS:-*}
+      GONEWS_INGEST_ON_START: ${GONEWS_INGEST_ON_START:-true}
+      GONEWS_INGEST_INTERVAL: ${GONEWS_INGEST_INTERVAL:-10m}
+      GONEWS_TRANSLATE_ENABLED: ${GONEWS_TRANSLATE_ENABLED:-true}
+      GONEWS_TRANSLATE_TARGETS: ${GONEWS_TRANSLATE_TARGETS:-ru}
+      GONEWS_TRANSLATE_PROVIDERS: ${GONEWS_TRANSLATE_PROVIDERS:-google,lingva,mymemory,libretranslate}
+      GONEWS_LIBRETRANSLATE_URL: ${GONEWS_LIBRETRANSLATE_URL:-https://libretranslate.com}
+      GONEWS_PUSH_ENABLED: ${GONEWS_PUSH_ENABLED:-false}
+      GONEWS_FCM_PROJECT_ID: ${GONEWS_FCM_PROJECT_ID:-}
+      GONEWS_FCM_SERVICE_ACCOUNT_FILE: ${GONEWS_FCM_SERVICE_ACCOUNT_FILE:-}
+    volumes:
+      - gonews-data:/data
+    networks:
+      - gonews
+
+  # Опциональный self-hosted переводчик:
+  #   docker compose --profile translate up -d --build
+  # и задайте GONEWS_LIBRETRANSLATE_URL=http://libretranslate:5000
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    container_name: gonews-libretranslate
+    profiles: ["translate"]
+    restart: unless-stopped
+    environment:
+      LT_LOAD_ONLY: en,ru
+      LT_DISABLE_WEB_UI: "true"
+    volumes:
+      - libretranslate-models:/home/libretranslate/.local
+    networks:
+      - gonews
+
+volumes:
+  gonews-data:
+  libretranslate-models:
+
+networks:
+  gonews:
+    driver: bridge

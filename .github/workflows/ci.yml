@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test & vet
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download modules
+        run: go mod download
+
+      - name: Check formatting
+        run: |
+          files=$(gofmt -l .)
+          if [ -n "$files" ]; then
+            echo "These files are not gofmt-ed:"
+            echo "$files"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -count=1 ./...
+
+      - name: Build
+        run: CGO_ENABLED=0 go build ./...
+
+  build-windows:
+    name: Build gonews.exe
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $env:CGO_ENABLED = "0"
+          go build -trimpath -ldflags "-s -w" -o bin/gonews.exe ./cmd/server
+
+      - name: Smoke test binary
+        shell: pwsh
+        run: |
+          $env:GONEWS_HTTP_ADDR = "127.0.0.1:18080"
+          $env:GONEWS_DB_PATH = "$env:RUNNER_TEMP/gonews.db"
+          $env:GONEWS_INGEST_ON_START = "false"
+          $env:GONEWS_TRANSLATE_ENABLED = "false"
+          $proc = Start-Process -FilePath "bin/gonews.exe" -PassThru
+          try {
+            Start-Sleep -Seconds 3
+            $resp = Invoke-RestMethod "http://127.0.0.1:18080/api/v1/health"
+            if ($resp.status -ne "ok") { throw "unexpected health status: $($resp.status)" }
+            Write-Host "Health OK: $($resp | ConvertTo-Json -Compress)"
+          } finally {
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gonews-windows-amd64
+          path: bin/gonews.exe
+          if-no-files-found: error
