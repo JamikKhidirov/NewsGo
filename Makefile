@@ -27,8 +27,8 @@ build: ## Собрать бинарник для текущей платформ
 build-windows: ## Кросс-сборка gonews.exe
 	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "$(LDFLAGS)" -o $(BIN_DIR)/$(APP).exe $(CMD)
 
-test: ## Запустить все тесты
-	go test -count=1 ./...
+test: ## Запустить все тесты (нужен PostgreSQL)
+	GONEWS_TEST_DATABASE_URL=$${GONEWS_TEST_DATABASE_URL:-postgres://gonews:gonews@127.0.0.1:5432/gonews?sslmode=disable} go test -count=1 ./...
 
 vet: ## go vet
 	go vet ./...
@@ -55,8 +55,10 @@ release-snapshot: ## Собрать все платформы через GoRelea
 docker: ## Собрать Docker-образ
 	docker build -t $(APP):$(VERSION) .
 
-docker-run: ## Запустить контейнер
-	docker run --rm -p 8080:8080 -v gonews-data:/data $(APP):$(VERSION)
+docker-run: ## Запустить контейнер (нужны внешние PostgreSQL, Redis, Kafka)
+	docker run --rm -p 8080:8080 \
+		-e GONEWS_DATABASE_URL -e GONEWS_REDIS_URL -e GONEWS_KAFKA_BROKERS \
+		-e GONEWS_JWT_SECRET $(APP):$(VERSION)
 
 compose-up: ## docker compose up
 	docker compose up -d --build

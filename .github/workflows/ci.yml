@@ -18,6 +18,22 @@ jobs:
   test:
     name: Test & vet
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gonews
+          POSTGRES_PASSWORD: gonews
+          POSTGRES_DB: gonews
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gonews"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      GONEWS_TEST_DATABASE_URL: postgres://gonews:gonews@127.0.0.1:5432/gonews?sslmode=disable
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -68,22 +84,64 @@ jobs:
           $env:CGO_ENABLED = "0"
           go build -trimpath -ldflags "-s -w" -o bin/gonews.exe ./cmd/server
 
+      - name: Start PostgreSQL
+        shell: pwsh
+        run: |
+          docker run -d --name gonews-pg `
+            -e POSTGRES_USER=gonews `
+            -e POSTGRES_PASSWORD=gonews `
+            -e POSTGRES_DB=gonews `
+            -p 5432:5432 postgres:16-alpine
+          $ready = $false
+          for ($i = 0; $i -lt 30; $i++) {
+            docker exec gonews-pg pg_isready -U gonews *> $null
+            if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+            Start-Sleep -Seconds 2
+          }
+          if (-not $ready) {
+            docker logs gonews-pg
+            throw "PostgreSQL did not become ready"
+          }
+
       - name: Smoke test binary
         shell: pwsh
         run: |
           $env:GONEWS_HTTP_ADDR = "127.0.0.1:18080"
-          $env:GONEWS_DB_PATH = "$env:RUNNER_TEMP/gonews.db"
+          $env:GONEWS_DATABASE_URL = "postgres://gonews:gonews@127.0.0.1:5432/gonews?sslmode=disable"
+          $env:GONEWS_REDIS_URL = ""
+          $env:GONEWS_KAFKA_BROKERS = ""
+          $env:GONEWS_JWT_SECRET = "ci-smoke-secret"
           $env:GONEWS_INGEST_ON_START = "false"
           $env:GONEWS_TRANSLATE_ENABLED = "false"
+          $env:GONEWS_PUSH_ENABLED = "false"
           $proc = Start-Process -FilePath "bin/gonews.exe" -PassThru
           try {
-            Start-Sleep -Seconds 3
-            $resp = Invoke-RestMethod "http://127.0.0.1:18080/api/v1/health"
-            if ($resp.status -ne "ok") { throw "unexpected health status: $($resp.status)" }
+            $ok = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              try {
+                $resp = Invoke-RestMethod "http://127.0.0.1:18080/api/v1/health"
+                if ($resp.status -eq "ok" -or $resp.status -eq "healthy") { $ok = $true; break }
+              } catch {
+                Start-Sleep -Seconds 1
+              }
+            }
+            if (-not $ok) { throw "service did not become healthy" }
             Write-Host "Health OK: $($resp | ConvertTo-Json -Compress)"
+
+            $ready = Invoke-RestMethod "http://127.0.0.1:18080/readyz"
+            if ($ready.status -ne "ready") { throw "unexpected readiness: $($ready | ConvertTo-Json -Compress)" }
+            Write-Host "Readiness OK: $($ready | ConvertTo-Json -Compress)"
+
+            $news = Invoke-RestMethod "http://127.0.0.1:18080/api/v1/news?limit=1"
+            Write-Host "News endpoint OK: $($news | ConvertTo-Json -Compress)"
           } finally {
             Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
           }
+
+      - name: Stop PostgreSQL
+        if: always()
+        shell: pwsh
+        run: docker rm -f gonews-pg 2>$null
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

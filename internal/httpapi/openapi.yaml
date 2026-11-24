@@ -414,6 +414,34 @@ paths:
                 $ref: '#/components/schemas/CommentListResponse'
         '404':
           $ref: '#/components/responses/NotFound'
+    post:
+      tags: [Engagement]
+      summary: Добавить комментарий
+      parameters:
+        - $ref: '#/components/parameters/ArticleID'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentRequest'
+      responses:
+        '201':
+          description: Комментарий создан
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Comment'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
 
   /api/v1/search:
     get:
@@ -1056,36 +1084,6 @@ paths:
       responses:
         '204':
           description: Просмотр учтён
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /api/v1/news/{id}/comments:
-    post:
-      tags: [Engagement]
-      summary: Добавить комментарий
-      parameters:
-        - $ref: '#/components/parameters/ArticleID'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CommentRequest'
-      responses:
-        '201':
-          description: Комментарий создан
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [data]
-                properties:
-                  data:
-                    $ref: '#/components/schemas/Comment'
-        '400':
-          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':

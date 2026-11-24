@@ -1,0 +1,80 @@
+groups:
+  - name: gonews-availability
+    rules:
+      - alert: GoNewsDown
+        expr: up{job="gonews"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "GoNews API is down"
+          description: "Prometheus cannot scrape {{ $labels.instance }} for more than a minute."
+
+      - alert: GoNewsHighErrorRate
+        expr: |
+          sum(rate(gonews_http_requests_total{status=~"5.."}[5m]))
+            /
+          clamp_min(sum(rate(gonews_http_requests_total[5m])), 0.001) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "5xx error rate above 5%"
+          description: "Current 5xx ratio is {{ $value | humanizePercentage }}."
+
+      - alert: GoNewsHighLatencyP99
+        expr: histogram_quantile(0.99, sum(rate(gonews_http_request_duration_seconds_bucket[5m])) by (le)) > 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p99 latency above 1s"
+          description: "p99 is {{ $value }}s."
+
+      - alert: GoNewsDatabasePoolSaturated
+        expr: gonews_db_pool_in_use / clamp_min(gonews_db_pool_open_connections, 1) > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL pool is saturated"
+          description: "In-use connections are above 90% of open connections."
+
+      - alert: GoNewsCacheDown
+        expr: up{job="redis"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis is down"
+          description: "Response cache and distributed rate limiting are degraded."
+
+      - alert: GoNewsIngestStale
+        expr: time() - max(gonews_ingest_run_last_finished_timestamp_seconds) > 3600
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "News ingestion has not completed for over an hour"
+          description: "Check provider availability and the ingest worker logs."
+
+      - alert: GoNewsKafkaPublishFailures
+        expr: sum(rate(gonews_kafka_messages_total{direction="produce",result="error"}[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kafka publish failures"
+          description: "More than 0.1 failed publishes per second."
+
+      - alert: GoNewsPushFailures
+        expr: |
+          sum(rate(gonews_push_deliveries_total{result="failed"}[10m]))
+            /
+          clamp_min(sum(rate(gonews_push_deliveries_total[10m])), 0.001) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Push delivery failure rate above 10%"
+          description: "Check FCM/APNs credentials and device tokens."

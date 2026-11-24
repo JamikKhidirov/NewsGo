@@ -2,12 +2,14 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gonews/gonews/internal/langdetect"
+	"github.com/gonews/gonews/internal/metrics"
 	"github.com/gonews/gonews/internal/news"
 )
 
@@ -26,6 +28,20 @@ func (a *API) handleAdminIngest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.metrics.IngestRun()
+	metrics.IngestLastFinished.Set(float64(time.Now().Unix()))
+	if a.cache != nil {
+		a.cache.DeletePrefix(context.Background(), "http")
+	}
+	if a.bus != nil {
+		payload, _ := json.Marshal(map[string]any{
+			"type": "ingest.completed", "runId": stats.RunID, "fetched": stats.Fetched,
+			"inserted": stats.Inserted, "updated": stats.Updated, "errors": stats.Errors,
+			"durationMs": stats.DurationMS, "finishedAt": stats.FinishedAt,
+		})
+		if err := a.bus.Publish(ctx, a.cfg.KafkaNewsTopic, "ingest", payload); err != nil {
+			a.log.Debug("news event publish failed", "error", err)
+		}
+	}
 	if a.translator != nil {
 		a.translator.Notify()
 	}

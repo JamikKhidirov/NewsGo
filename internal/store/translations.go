@@ -30,10 +30,11 @@ func (s *Store) BackfillTranslations(ctx context.Context, target string, limit i
 	if limit < 1 || limit > 10000 {
 		limit = 1000
 	}
-	res, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO translation_jobs(article_id, target_lang, status, next_attempt_at, created_at, updated_at)
+	res, err := s.db.ExecContext(ctx, `INSERT INTO translation_jobs(article_id, target_lang, status, next_attempt_at, created_at, updated_at)
 		SELECT a.id, ?, 'pending', ?, ?, ? FROM articles a
 		WHERE a.lang<>? AND NOT EXISTS(SELECT 1 FROM article_translations t WHERE t.article_id=a.id AND t.lang=?)
-		LIMIT ?`, target, now(), now(), now(), target, target, limit)
+		LIMIT ?
+		ON CONFLICT DO NOTHING`, target, now(), now(), now(), target, target, limit)
 	if err != nil {
 		return 0, err
 	}
@@ -54,39 +55,28 @@ func (s *Store) ClaimTranslationJobs(ctx context.Context, limit int) ([]model.Tr
 	if limit < 1 {
 		limit = 1
 	}
-	tx, err := s.db.BeginTx(ctx, nil)
+	rows, err := s.db.QueryContext(ctx, `UPDATE translation_jobs SET status='processing', updated_at=?
+		WHERE id IN (
+			SELECT id FROM translation_jobs
+			WHERE status='pending' AND next_attempt_at<=?
+			ORDER BY id ASC
+			LIMIT ?
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING id, article_id, target_lang, attempts`, now(), now(), limit)
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
-
-	rows, err := tx.QueryContext(ctx, `SELECT id, article_id, target_lang, attempts FROM translation_jobs
-		WHERE status='pending' AND next_attempt_at<=? ORDER BY id ASC LIMIT ?`, now(), limit)
-	if err != nil {
-		return nil, err
-	}
+	defer rows.Close()
 	var jobs []model.TranslationJob
 	for rows.Next() {
 		var j model.TranslationJob
 		if err := rows.Scan(&j.ID, &j.ArticleID, &j.TargetLang, &j.Attempts); err != nil {
-			rows.Close()
 			return nil, err
 		}
 		jobs = append(jobs, j)
 	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	for _, j := range jobs {
-		if _, err := tx.ExecContext(ctx, `UPDATE translation_jobs SET status='processing', updated_at=? WHERE id=?`, now(), j.ID); err != nil {
-			return nil, err
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	return jobs, nil
+	return jobs, rows.Err()
 }
 
 func (s *Store) CompleteTranslationJob(ctx context.Context, id int64) error {
@@ -102,7 +92,7 @@ func (s *Store) FailTranslationJob(ctx context.Context, id int64, attempts int, 
 		next = time.Now().UTC().Add(24 * time.Hour)
 	}
 	_, err := s.db.ExecContext(ctx, `UPDATE translation_jobs SET status=?, attempts=?, last_error=?, next_attempt_at=?, updated_at=? WHERE id=?`,
-		status, attempts, truncate(reason, 500), next.Format(time.RFC3339Nano), now(), id)
+		status, attempts, truncate(reason, 500), next, now(), id)
 	return err
 }
 

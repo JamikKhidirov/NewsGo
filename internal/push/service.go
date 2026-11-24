@@ -1,33 +1,52 @@
-// Package push provides in-app notifications and FCM push delivery.
+// Package push provides in-app notifications and multi-platform push delivery.
+//
+// The HTTP layer only persists the notification and publishes a push event.
+// Delivery happens asynchronously in a Kafka consumer (or the in-process bus in
+// development), so a slow APNs/FCM call never blocks an API request.
 package push
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"time"
 
+	"github.com/gonews/gonews/internal/events"
 	"github.com/gonews/gonews/internal/model"
 	"github.com/gonews/gonews/internal/platform"
 	"github.com/gonews/gonews/internal/store"
 )
 
-// Service combines notification persistence and device delivery.
+// Event is the Kafka payload for one push notification.
+type Event struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"userId,omitempty"`
+	Title     string    `json:"title"`
+	Body      string    `json:"body"`
+	ArticleID string    `json:"articleId,omitempty"`
+	Kind      string    `json:"kind"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// Service combines notification persistence and event publishing.
 type Service struct {
-	st      *store.Store
-	sender  Sender
-	enabled bool
-	log     *slog.Logger
+	st       *store.Store
+	bus      events.Bus
+	delivery *Delivery
+	enabled  bool
+	topic    string
+	log      *slog.Logger
 }
 
 // NewService builds the push service.
-func NewService(st *store.Store, sender Sender, enabled bool, log *slog.Logger) *Service {
+func NewService(st *store.Store, bus events.Bus, delivery *Delivery, enabled bool, topic string, log *slog.Logger) *Service {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Service{st: st, sender: sender, enabled: enabled, log: log}
+	return &Service{st: st, bus: bus, delivery: delivery, enabled: enabled, topic: topic, log: log}
 }
 
-// Broadcast stores an in-app broadcast and (optionally) pushes it to all devices.
+// Broadcast stores an in-app broadcast and queues delivery to all devices.
 func (s *Service) Broadcast(ctx context.Context, title, body, articleID, kind string) (SendResult, error) {
 	n := model.Notification{
 		ID:    platform.NewID("n"),
@@ -44,14 +63,12 @@ func (s *Service) Broadcast(ctx context.Context, title, body, articleID, kind st
 	if !s.enabled {
 		return SendResult{}, nil
 	}
-	tokens, err := s.st.AllDeviceTokens(ctx, "")
-	if err != nil {
-		return SendResult{}, err
-	}
-	return s.deliver(ctx, tokens, title, body, articleID)
+	return s.queue(ctx, Event{
+		ID: n.ID, Title: title, Body: body, ArticleID: articleID, Kind: n.Kind, CreatedAt: n.CreatedAt,
+	})
 }
 
-// SendToUser stores a personal notification and pushes it to the user's devices.
+// SendToUser stores a personal notification and queues delivery to the user's devices.
 func (s *Service) SendToUser(ctx context.Context, userID, title, body, articleID, kind string) (SendResult, error) {
 	n := model.Notification{
 		ID:     platform.NewID("n"),
@@ -69,26 +86,41 @@ func (s *Service) SendToUser(ctx context.Context, userID, title, body, articleID
 	if !s.enabled {
 		return SendResult{}, nil
 	}
-	devices, err := s.st.ListDevices(ctx, userID)
+	return s.queue(ctx, Event{
+		ID: n.ID, UserID: userID, Title: title, Body: body, ArticleID: articleID, Kind: n.Kind, CreatedAt: n.CreatedAt,
+	})
+}
+
+func (s *Service) queue(ctx context.Context, evt Event) (SendResult, error) {
+	payload, err := json.Marshal(evt)
 	if err != nil {
 		return SendResult{}, err
 	}
-	tokens := make([]string, 0, len(devices))
-	for _, d := range devices {
-		tokens = append(tokens, d.Token)
+	if s.bus == nil {
+		return s.deliverNow(ctx, evt)
 	}
-	return s.deliver(ctx, tokens, title, body, articleID)
+	if err := s.bus.Publish(ctx, s.topic, evt.ID, payload); err != nil {
+		// Kafka is unavailable: degrade to synchronous delivery instead of
+		// losing the notification.
+		s.log.Warn("push event publish failed; delivering synchronously", "error", err)
+		return s.deliverNow(ctx, evt)
+	}
+	return SendResult{Queued: 1}, nil
 }
 
-func (s *Service) deliver(ctx context.Context, tokens []string, title, body, articleID string) (SendResult, error) {
-	if len(tokens) == 0 {
+func (s *Service) deliverNow(ctx context.Context, evt Event) (SendResult, error) {
+	devices, err := s.devices(ctx, evt.UserID)
+	if err != nil {
+		return SendResult{}, err
+	}
+	if len(devices) == 0 {
 		return SendResult{}, nil
 	}
-	res, err := s.sender.Send(ctx, tokens, Message{
-		Title:     title,
-		Body:      body,
-		ArticleID: articleID,
-		Data:      map[string]string{"kind": "news", "articleId": articleID},
+	res, err := s.delivery.Send(ctx, devices, Message{
+		Title:     evt.Title,
+		Body:      evt.Body,
+		ArticleID: evt.ArticleID,
+		Data:      map[string]string{"kind": evt.Kind, "articleId": evt.ArticleID, "notificationId": evt.ID},
 	})
 	if err != nil {
 		return res, err
@@ -99,6 +131,13 @@ func (s *Service) deliver(ctx context.Context, tokens []string, title, body, art
 		}
 	}
 	return res, nil
+}
+
+func (s *Service) devices(ctx context.Context, userID string) ([]model.Device, error) {
+	if userID != "" {
+		return s.st.ListDevices(ctx, userID)
+	}
+	return s.st.AllDevices(ctx)
 }
 
 // BroadcastTopNews sends a throttled "breaking news" alert about the hottest
@@ -137,4 +176,66 @@ func defaultKind(kind string) string {
 		return "broadcast"
 	}
 	return kind
+}
+
+// Worker consumes push events and delivers them to FCM/APNs.
+type Worker struct {
+	st       *store.Store
+	delivery *Delivery
+	log      *slog.Logger
+}
+
+// NewWorker builds the delivery worker.
+func NewWorker(st *store.Store, delivery *Delivery, log *slog.Logger) *Worker {
+	if log == nil {
+		log = slog.Default()
+	}
+	return &Worker{st: st, delivery: delivery, log: log}
+}
+
+// Start subscribes the worker to the push topic.
+func (w *Worker) Start(ctx context.Context, bus events.Bus, topic, group string) {
+	if bus == nil {
+		return
+	}
+	bus.Subscribe(ctx, topic, group, w.Handle)
+	w.log.Info("push worker started", "bus", bus.Name(), "topic", topic, "group", group)
+}
+
+// Handle processes one push event.
+func (w *Worker) Handle(ctx context.Context, payload []byte) error {
+	var evt Event
+	if err := json.Unmarshal(payload, &evt); err != nil {
+		return err
+	}
+	var devices []model.Device
+	var err error
+	if evt.UserID != "" {
+		devices, err = w.st.ListDevices(ctx, evt.UserID)
+	} else {
+		devices, err = w.st.AllDevices(ctx)
+	}
+	if err != nil {
+		return err
+	}
+	if len(devices) == 0 {
+		w.log.Debug("push event has no devices", "notification_id", evt.ID)
+		return nil
+	}
+	res, err := w.delivery.Send(ctx, devices, Message{
+		Title:     evt.Title,
+		Body:      evt.Body,
+		ArticleID: evt.ArticleID,
+		Data:      map[string]string{"kind": evt.Kind, "articleId": evt.ArticleID, "notificationId": evt.ID},
+	})
+	if err != nil {
+		return err
+	}
+	for _, token := range res.Invalid {
+		if err := w.st.DisableDevice(ctx, token); err != nil {
+			w.log.Warn("disable invalid device", "error", err)
+		}
+	}
+	w.log.Info("push delivered", "notification_id", evt.ID, "targets", res.Targets, "sent", res.Sent, "failed", res.Failed)
+	return nil
 }

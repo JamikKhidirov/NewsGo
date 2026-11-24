@@ -1,0 +1,494 @@
+/* Guide layout: sidebar + article + table of contents. */
+
+.docs-layout {
+  display: grid;
+  grid-template-columns: 252px minmax(0, 1fr) 232px;
+  gap: 36px;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 28px 24px 56px;
+}
+
+/* ---------- sidebar ---------- */
+
+.docs-sidebar {
+  position: sticky;
+  top: calc(var(--header-h) + 24px);
+  align-self: start;
+  max-height: calc(100vh - var(--header-h) - 48px);
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.nav-title {
+  margin: 20px 0 7px;
+  padding: 0 10px;
+  color: var(--fg-faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.nav-title:first-child {
+  margin-top: 0;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-link {
+  display: block;
+  padding: 7px 10px;
+  border-left: 2px solid transparent;
+  border-radius: 0 7px 7px 0;
+  color: var(--fg-muted);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.nav-link:hover {
+  background: var(--bg-subtle);
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.nav-link.active {
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.sidebar-backdrop {
+  display: none;
+}
+
+/* ---------- article ---------- */
+
+.docs-content {
+  min-width: 0;
+  max-width: 900px;
+}
+
+.docs-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 18px;
+  color: var(--fg-faint);
+  font-size: 13px;
+}
+
+.docs-crumbs a {
+  color: var(--fg-muted);
+}
+
+.markdown {
+  font-size: 16px;
+  line-height: 1.72;
+  overflow-wrap: break-word;
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown h1 {
+  margin: 0 0 18px;
+  font-size: 2.05rem;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+}
+
+.markdown h2 {
+  margin: 2.6rem 0 1rem;
+  padding-bottom: 0.42rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 1.48rem;
+  line-height: 1.3;
+  letter-spacing: -0.015em;
+}
+
+.markdown h3 {
+  margin: 2rem 0 0.7rem;
+  font-size: 1.17rem;
+  line-height: 1.35;
+}
+
+.markdown h4 {
+  margin: 1.5rem 0 0.55rem;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown blockquote,
+.markdown table,
+.markdown pre {
+  margin: 0.9rem 0;
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 1.55rem;
+}
+
+.markdown li {
+  margin: 0.28rem 0;
+}
+
+.markdown li > ul,
+.markdown li > ol {
+  margin: 0.25rem 0;
+}
+
+.markdown hr {
+  height: 1px;
+  margin: 2.2rem 0;
+  border: 0;
+  background: var(--border);
+}
+
+.markdown a {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  text-underline-offset: 2px;
+}
+
+.markdown a:hover {
+  text-decoration-color: var(--accent);
+}
+
+.markdown strong {
+  font-weight: 650;
+}
+
+.markdown code {
+  padding: 0.14em 0.4em;
+  border-radius: 6px;
+  background: var(--bg-code);
+  font-family: ui-monospace, SFMono-Regular, "Cascadia Code", Consolas, "Liberation Mono",
+    Menlo, monospace;
+  font-size: 0.88em;
+}
+
+.markdown pre {
+  position: relative;
+  overflow-x: auto;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--pre-bg);
+  color: var(--pre-fg);
+  line-height: 1.55;
+}
+
+.markdown pre code {
+  padding: 0;
+  background: none;
+  color: inherit;
+  font-size: 0.855rem;
+}
+
+.markdown blockquote {
+  padding: 0.7rem 1rem;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  background: var(--accent-soft);
+  color: var(--fg);
+}
+
+.markdown blockquote > :first-child {
+  margin-top: 0;
+}
+
+.markdown blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.925rem;
+}
+
+.table-wrap {
+  margin: 1rem 0;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.table-wrap table {
+  margin: 0;
+  min-width: 100%;
+}
+
+.markdown th,
+.markdown td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.markdown th {
+  background: var(--bg-subtle);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.markdown tr:last-child td {
+  border-bottom: 0;
+}
+
+.markdown input[type="checkbox"] {
+  margin-right: 6px;
+}
+
+.copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 4px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d7e2f0;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.markdown pre:hover .copy-btn,
+.copy-btn:focus-visible {
+  opacity: 1;
+}
+
+.copy-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* ---------- table of contents ---------- */
+
+.docs-toc {
+  position: sticky;
+  top: calc(var(--header-h) + 24px);
+  align-self: start;
+  max-height: calc(100vh - var(--header-h) - 48px);
+  overflow-y: auto;
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.toc-title {
+  margin: 0 0 10px;
+  color: var(--fg-faint);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.docs-toc nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toc-link {
+  padding: 3px 0;
+  color: var(--fg-muted);
+  line-height: 1.4;
+}
+
+.toc-link:hover {
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.toc-link.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.toc-l3 {
+  padding-left: 12px;
+  font-size: 12.5px;
+}
+
+/* ---------- pager + footer ---------- */
+
+.docs-pager {
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  margin-top: 44px;
+  padding-top: 22px;
+  border-top: 1px solid var(--border);
+}
+
+.pager-link {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 48%;
+  padding: 12px 15px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  color: var(--fg);
+}
+
+.pager-link:hover {
+  border-color: var(--accent);
+  text-decoration: none;
+}
+
+.pager-link span {
+  color: var(--fg-faint);
+  font-size: 12px;
+}
+
+.pager-link strong {
+  font-size: 14px;
+}
+
+.pager-link.next {
+  margin-left: auto;
+  text-align: right;
+}
+
+.docs-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: space-between;
+  margin-top: 36px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  color: var(--fg-faint);
+  font-size: 12.5px;
+}
+
+/* ---------- responsive ---------- */
+
+@media (max-width: 1280px) {
+  .docs-layout {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+
+  .docs-toc {
+    display: none;
+  }
+}
+
+@media (max-width: 960px) {
+  .docs-layout {
+    display: block;
+    padding: 18px 16px 44px;
+  }
+
+  .docs-sidebar {
+    position: fixed;
+    top: var(--header-h);
+    bottom: 0;
+    left: 0;
+    z-index: 60;
+    width: 286px;
+    max-height: none;
+    padding: 18px 14px 30px;
+    background: var(--bg-elevated);
+    border-right: 1px solid var(--border);
+    transform: translateX(-102%);
+    transition: transform 0.2s ease;
+  }
+
+  .docs-sidebar.open {
+    transform: none;
+    box-shadow: var(--shadow);
+  }
+
+  .sidebar-backdrop {
+    position: fixed;
+    inset: var(--header-h) 0 0 0;
+    z-index: 55;
+    display: block;
+    background: rgba(4, 8, 14, 0.5);
+    backdrop-filter: blur(1px);
+  }
+
+  .sidebar-backdrop[hidden] {
+    display: none;
+  }
+
+  .docs-content {
+    max-width: none;
+  }
+
+  .markdown h1 {
+    font-size: 1.75rem;
+  }
+
+  .markdown h2 {
+    font-size: 1.35rem;
+  }
+
+  .copy-btn {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 560px) {
+  .docs-pager {
+    flex-direction: column;
+  }
+
+  .pager-link {
+    max-width: none;
+  }
+
+  .pager-link.next {
+    text-align: left;
+  }
+
+  .markdown {
+    font-size: 15px;
+  }
+
+  .markdown table {
+    font-size: 0.875rem;
+  }
+}
+
+@media print {
+  .docs-header,
+  .docs-sidebar,
+  .docs-toc,
+  .docs-pager,
+  .copy-btn {
+    display: none !important;
+  }
+
+  .docs-layout {
+    display: block;
+    padding: 0;
+  }
+
+  body {
+    background: #fff;
+    color: #000;
+  }
+}

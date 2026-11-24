@@ -1,4 +1,4 @@
-// Package store implements persistence on SQLite (pure Go driver, no CGO).
+// Package store implements persistence on PostgreSQL (pgx driver, no CGO).
 package store
 
 import (
@@ -7,15 +7,12 @@ import (
 	"embed"
 	"fmt"
 	"io/fs"
-	"net/url"
-	"os"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 //go:embed migrations/*.sql
@@ -23,50 +20,67 @@ var migrationsFS embed.FS
 
 // Store is the application repository.
 type Store struct {
-	db *sql.DB
+	db *DB
 }
 
-// Open opens (and creates if needed) the SQLite database and applies migrations.
-func Open(ctx context.Context, path string) (*Store, error) {
-	if path == "" {
-		path = "data/gonews.db"
-	}
-	if dir := filepath.Dir(path); dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return nil, fmt.Errorf("create data dir: %w", err)
-		}
-	}
-	abs, err := filepath.Abs(path)
+// DB wraps *sql.DB and translates the SQLite-style "?" placeholders used by
+// the query layer into PostgreSQL "$1, $2, ..." placeholders.
+type DB struct{ *sql.DB }
+
+// Tx wraps *sql.Tx with the same placeholder translation.
+type Tx struct{ *sql.Tx }
+
+func (d *DB) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return d.DB.ExecContext(ctx, rebind(query), args...)
+}
+
+func (d *DB) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return d.DB.QueryContext(ctx, rebind(query), args...)
+}
+
+func (d *DB) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return d.DB.QueryRowContext(ctx, rebind(query), args...)
+}
+
+func (d *DB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) {
+	tx, err := d.DB.BeginTx(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
-	slashPath := filepath.ToSlash(abs)
-	if len(slashPath) > 1 && slashPath[1] == ':' {
-		// Windows drive letter: file:///C:/path (a bare file:C:/path is parsed
-		// as an authority by the SQLite URI parser).
-		slashPath = "/" + slashPath
-	}
-	u := url.URL{Scheme: "file", Path: slashPath}
-	dsn := u.String() + "?" + strings.Join([]string{
-		"_pragma=busy_timeout(10000)",
-		"_pragma=journal_mode(WAL)",
-		"_pragma=foreign_keys(1)",
-		"_pragma=synchronous(NORMAL)",
-	}, "&")
+	return &Tx{Tx: tx}, nil
+}
 
-	db, err := sql.Open("sqlite", dsn)
-	if err != nil {
-		return nil, fmt.Errorf("open sqlite: %w", err)
+func (t *Tx) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return t.Tx.ExecContext(ctx, rebind(query), args...)
+}
+
+func (t *Tx) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	return t.Tx.QueryContext(ctx, rebind(query), args...)
+}
+
+func (t *Tx) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return t.Tx.QueryRowContext(ctx, rebind(query), args...)
+}
+
+// Open connects to PostgreSQL and applies migrations.
+func Open(ctx context.Context, dsn string) (*Store, error) {
+	if strings.TrimSpace(dsn) == "" {
+		dsn = "postgres://gonews:gonews@127.0.0.1:5432/gonews?sslmode=disable"
 	}
-	db.SetMaxOpenConns(4)
-	db.SetMaxIdleConns(4)
-	db.SetConnMaxLifetime(time.Hour)
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("open postgres: %w", err)
+	}
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(10)
+	db.SetConnMaxLifetime(30 * time.Minute)
+	db.SetConnMaxIdleTime(5 * time.Minute)
 
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("ping sqlite: %w", err)
+		return nil, fmt.Errorf("ping postgres: %w", err)
 	}
-	s := &Store{db: db}
+	s := &Store{db: &DB{DB: db}}
 	if err := s.migrate(ctx); err != nil {
 		db.Close()
 		return nil, err
@@ -74,8 +88,8 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	return s, nil
 }
 
-// DB exposes the raw handle (used by tests/health checks).
-func (s *Store) DB() *sql.DB { return s.db }
+// DB exposes the raw handle (used by tests, health checks and metrics).
+func (s *Store) DB() *sql.DB { return s.db.DB }
 
 func (s *Store) Close() error { return s.db.Close() }
 
@@ -83,8 +97,8 @@ func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 
 func (s *Store) migrate(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
-		version INTEGER PRIMARY KEY,
-		applied_at TEXT NOT NULL
+		version    INTEGER PRIMARY KEY,
+		applied_at TIMESTAMPTZ NOT NULL
 	)`); err != nil {
 		return fmt.Errorf("create schema_migrations: %w", err)
 	}
@@ -137,17 +151,53 @@ func (s *Store) migrate(ctx context.Context) error {
 	return nil
 }
 
-func now() string { return time.Now().UTC().Format(time.RFC3339Nano) }
-
-func nowT() time.Time { return time.Now().UTC() }
-
-func parseTime(v string) time.Time {
-	t, err := time.Parse(time.RFC3339Nano, v)
-	if err != nil {
-		t, _ = time.Parse(time.RFC3339, v)
+// rebind converts ? placeholders to $1..$n, skipping quoted literals.
+func rebind(query string) string {
+	if !strings.ContainsRune(query, '?') {
+		return query
 	}
-	return t.UTC()
+	var b strings.Builder
+	b.Grow(len(query) + 8)
+	n := 0
+	inSingle, inDouble := false, false
+	for i := 0; i < len(query); i++ {
+		c := query[i]
+		switch {
+		case inSingle:
+			b.WriteByte(c)
+			if c == '\'' {
+				if i+1 < len(query) && query[i+1] == '\'' {
+					b.WriteByte('\'')
+					i++
+				} else {
+					inSingle = false
+				}
+			}
+		case inDouble:
+			b.WriteByte(c)
+			if c == '"' {
+				inDouble = false
+			}
+		case c == '\'':
+			inSingle = true
+			b.WriteByte(c)
+		case c == '"':
+			inDouble = true
+			b.WriteByte(c)
+		case c == '?':
+			n++
+			b.WriteByte('$')
+			b.WriteString(strconv.Itoa(n))
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
+
+func now() time.Time { return time.Now().UTC() }
+
+func nowT() time.Time { return now() }
 
 func nullStr(v sql.NullString) *string {
 	if !v.Valid || v.String == "" {

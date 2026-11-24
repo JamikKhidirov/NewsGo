@@ -1,40 +1,255 @@
+name: gonews
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gonews-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-gonews}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-gonews}
+      POSTGRES_DB: ${POSTGRES_DB:-gonews}
+      TZ: UTC
+    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=256MB", "-c", "timezone=UTC"]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./deploy/postgres/init.sql:/docker-entrypoint-initdb.d/10-init.sql:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging: *default-logging
+    networks: [gonews]
+
+  redis:
+    image: redis:7-alpine
+    container_name: gonews-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis-data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging: *default-logging
+    networks: [gonews]
+
+  kafka:
+    image: apache/kafka:3.9.1
+    container_name: gonews-kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 6
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 72
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 20s
+    logging: *default-logging
+    networks: [gonews]
+
+  kafka-init:
+    image: apache/kafka:3.9.1
+    container_name: gonews-kafka-init
+    restart: "no"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic gonews.notifications \
+          --partitions 6 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic gonews.news \
+          --partitions 3 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 --list
+    logging: *default-logging
+    networks: [gonews]
+
   gonews:
     build:
       context: .
       args:
         VERSION: ${GONEWS_VERSION:-dev}
+        COMMIT: ${GONEWS_COMMIT:-none}
     image: gonews:${GONEWS_VERSION:-dev}
     container_name: gonews
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     ports:
       - "${GONEWS_PORT:-8080}:8080"
     environment:
       GONEWS_ENV: ${GONEWS_ENV:-production}
+      GONEWS_LOG_LEVEL: ${GONEWS_LOG_LEVEL:-info}
+      GONEWS_LOG_FORMAT: json
       GONEWS_HTTP_ADDR: ":8080"
       GONEWS_PUBLIC_BASE_URL: ${GONEWS_PUBLIC_BASE_URL:-http://localhost:8080}
-      GONEWS_DB_PATH: /data/gonews.db
+      GONEWS_DATABASE_URL: postgres://${POSTGRES_USER:-gonews}:${POSTGRES_PASSWORD:-gonews}@postgres:5432/${POSTGRES_DB:-gonews}?sslmode=disable
+      GONEWS_REDIS_URL: redis://redis:6379/0
+      GONEWS_CACHE_TTL: ${GONEWS_CACHE_TTL:-30s}
+      GONEWS_KAFKA_BROKERS: kafka:9092
+      GONEWS_KAFKA_PUSH_TOPIC: ${GONEWS_KAFKA_PUSH_TOPIC:-gonews.notifications}
+      GONEWS_KAFKA_NEWS_TOPIC: ${GONEWS_KAFKA_NEWS_TOPIC:-gonews.news}
+      GONEWS_KAFKA_GROUP: ${GONEWS_KAFKA_GROUP:-gonews-push}
       GONEWS_JWT_SECRET: ${GONEWS_JWT_SECRET:-change-me-in-production}
       GONEWS_ADMIN_TOKEN: ${GONEWS_ADMIN_TOKEN:-}
       GONEWS_ADMIN_EMAILS: ${GONEWS_ADMIN_EMAILS:-}
       GONEWS_CORS_ORIGINS: ${GONEWS_CORS_ORIGINS:-*}
+      GONEWS_RATE_LIMIT_PER_MINUTE: ${GONEWS_RATE_LIMIT_PER_MINUTE:-180}
       GONEWS_INGEST_ON_START: ${GONEWS_INGEST_ON_START:-true}
       GONEWS_INGEST_INTERVAL: ${GONEWS_INGEST_INTERVAL:-10m}
+      GONEWS_INGEST_TIMEOUT: ${GONEWS_INGEST_TIMEOUT:-90s}
       GONEWS_TRANSLATE_ENABLED: ${GONEWS_TRANSLATE_ENABLED:-true}
       GONEWS_TRANSLATE_TARGETS: ${GONEWS_TRANSLATE_TARGETS:-ru}
       GONEWS_TRANSLATE_PROVIDERS: ${GONEWS_TRANSLATE_PROVIDERS:-google,lingva,mymemory,libretranslate}
       GONEWS_LIBRETRANSLATE_URL: ${GONEWS_LIBRETRANSLATE_URL:-https://libretranslate.com}
-      GONEWS_PUSH_ENABLED: ${GONEWS_PUSH_ENABLED:-false}
+      GONEWS_PUSH_ENABLED: ${GONEWS_PUSH_ENABLED:-true}
+      GONEWS_PUSH_WORKERS: ${GONEWS_PUSH_WORKERS:-4}
       GONEWS_FCM_PROJECT_ID: ${GONEWS_FCM_PROJECT_ID:-}
       GONEWS_FCM_SERVICE_ACCOUNT_FILE: ${GONEWS_FCM_SERVICE_ACCOUNT_FILE:-}
-    volumes:
-      - gonews-data:/data
-    networks:
-      - gonews
+      GONEWS_APNS_KEY_FILE: ${GONEWS_APNS_KEY_FILE:-}
+      GONEWS_APNS_KEY_ID: ${GONEWS_APNS_KEY_ID:-}
+      GONEWS_APNS_TEAM_ID: ${GONEWS_APNS_TEAM_ID:-}
+      GONEWS_APNS_TOPIC: ${GONEWS_APNS_TOPIC:-com.gonews.app}
+      GONEWS_APNS_SANDBOX: ${GONEWS_APNS_SANDBOX:-false}
+    logging: *default-logging
+    networks: [gonews]
 
-  # Опциональный self-hosted переводчик:
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    container_name: gonews-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    depends_on:
+      - gonews
+    logging: *default-logging
+    networks: [gonews]
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    container_name: gonews-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/gonews.json
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - prometheus
+      - loki
+    logging: *default-logging
+    networks: [gonews]
+
+  loki:
+    image: grafana/loki:3.4.2
+    container_name: gonews-loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/config.yml
+    volumes:
+      - ./deploy/loki/config.yml:/etc/loki/config.yml:ro
+      - loki-data:/loki
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    logging: *default-logging
+    networks: [gonews]
+
+  promtail:
+    image: grafana/promtail:3.4.2
+    container_name: gonews-promtail
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./deploy/promtail/config.yml:/etc/promtail/config.yml:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+    logging: *default-logging
+    networks: [gonews]
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.17.1
+    container_name: gonews-postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: postgresql://${POSTGRES_USER:-gonews}:${POSTGRES_PASSWORD:-gonews}@postgres:5432/${POSTGRES_DB:-gonews}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging: *default-logging
+    networks: [gonews]
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.67.0
+    container_name: gonews-redis-exporter
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    logging: *default-logging
+    networks: [gonews]
+
+  # Optional self-hosted translator:
   #   docker compose --profile translate up -d --build
-  # и задайте GONEWS_LIBRETRANSLATE_URL=http://libretranslate:5000
+  # then set GONEWS_LIBRETRANSLATE_URL=http://libretranslate:5000
   libretranslate:
     image: libretranslate/libretranslate:latest
     container_name: gonews-libretranslate
@@ -45,11 +260,16 @@ services:
       LT_DISABLE_WEB_UI: "true"
     volumes:
       - libretranslate-models:/home/libretranslate/.local
-    networks:
-      - gonews
+    logging: *default-logging
+    networks: [gonews]
 
 volumes:
-  gonews-data:
+  postgres-data:
+  redis-data:
+  kafka-data:
+  prometheus-data:
+  grafana-data:
+  loki-data:
   libretranslate-models:
 
 networks:

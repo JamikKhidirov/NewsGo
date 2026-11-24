@@ -38,7 +38,7 @@ func (s *Store) ListNotifications(ctx context.Context, userID string, page, limi
 		args = append(args, userID)
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT n.id, n.user_id, n.kind, n.title, n.body, n.data, n.article_id, n.created_at,
-			EXISTS(SELECT 1 FROM notification_reads r WHERE r.notification_id=n.id AND r.user_id=?) AS is_read
+			CASE WHEN EXISTS(SELECT 1 FROM notification_reads r WHERE r.notification_id=n.id AND r.user_id=?) THEN 1 ELSE 0 END AS is_read
 		FROM notifications n`+where+` ORDER BY n.created_at DESC LIMIT ? OFFSET ?`,
 		append([]any{userID}, append(args, limit, (page-1)*limit)...)...)
 	if err != nil {
@@ -49,14 +49,14 @@ func (s *Store) ListNotifications(ctx context.Context, userID string, page, limi
 	for rows.Next() {
 		var n model.Notification
 		var uid, aid sql.NullString
-		var created string
+		var created time.Time
 		var read int
 		if err := rows.Scan(&n.ID, &uid, &n.Kind, &n.Title, &n.Body, &n.Data, &aid, &created, &read); err != nil {
 			return nil, 0, err
 		}
 		n.UserID = nullStr(uid)
 		n.ArticleID = nullStr(aid)
-		n.CreatedAt = parseTime(created)
+		n.CreatedAt = created.UTC()
 		n.Read = read == 1
 		out = append(out, n)
 	}
@@ -86,16 +86,17 @@ func (s *Store) MarkNotificationRead(ctx context.Context, userID, notificationID
 	if n == 0 {
 		return ErrNotFound
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO notification_reads(user_id, notification_id, read_at) VALUES(?,?,?)`,
+	_, err := s.db.ExecContext(ctx, `INSERT INTO notification_reads(user_id, notification_id, read_at) VALUES(?,?,?) ON CONFLICT DO NOTHING`,
 		userID, notificationID, now())
 	return err
 }
 
 func (s *Store) MarkAllNotificationsRead(ctx context.Context, userID string) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO notification_reads(user_id, notification_id, read_at)
+	res, err := s.db.ExecContext(ctx, `INSERT INTO notification_reads(user_id, notification_id, read_at)
 		SELECT ?, n.id, ? FROM notifications n
 		WHERE (n.user_id IS NULL OR n.user_id=?)
-		  AND NOT EXISTS(SELECT 1 FROM notification_reads r WHERE r.notification_id=n.id AND r.user_id=?)`,
+		  AND NOT EXISTS(SELECT 1 FROM notification_reads r WHERE r.notification_id=n.id AND r.user_id=?)
+		ON CONFLICT DO NOTHING`,
 		userID, now(), userID, userID)
 	if err != nil {
 		return 0, err
@@ -115,11 +116,12 @@ func (s *Store) UnreadNotificationCount(ctx context.Context, userID string) (int
 // --- ingest bookkeeping ---
 
 func (s *Store) StartIngestRun(ctx context.Context) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `INSERT INTO ingest_runs(started_at, status) VALUES(?, 'running')`, now())
+	var id int64
+	err := s.db.QueryRowContext(ctx, `INSERT INTO ingest_runs(started_at, status) VALUES(?, 'running') RETURNING id`, now()).Scan(&id)
 	if err != nil {
 		return 0, err
 	}
-	return res.LastInsertId()
+	return id, nil
 }
 
 func (s *Store) FinishIngestRun(ctx context.Context, id int64, status string, fetched, inserted, updated, errs int, details string) error {
@@ -141,13 +143,14 @@ func (s *Store) ListIngestRuns(ctx context.Context, limit int) ([]model.IngestRu
 	var out []model.IngestRun
 	for rows.Next() {
 		var r model.IngestRun
-		var started, finished string
+		var started time.Time
+		var finished sql.NullTime
 		if err := rows.Scan(&r.ID, &started, &finished, &r.Status, &r.Fetched, &r.Inserted, &r.Updated, &r.Errors, &r.Details); err != nil {
 			return nil, err
 		}
-		r.StartedAt = parseTime(started)
-		if finished != "" {
-			r.FinishedAt = parseTime(finished)
+		r.StartedAt = started.UTC()
+		if finished.Valid {
+			r.FinishedAt = finished.Time.UTC()
 		}
 		out = append(out, r)
 	}

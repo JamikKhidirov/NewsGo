@@ -13,7 +13,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gonews/gonews/internal/auth"
+	"github.com/gonews/gonews/internal/cache"
 	"github.com/gonews/gonews/internal/config"
+	"github.com/gonews/gonews/internal/events"
 	"github.com/gonews/gonews/internal/news"
 	"github.com/gonews/gonews/internal/push"
 	"github.com/gonews/gonews/internal/store"
@@ -29,6 +31,8 @@ type API struct {
 	agg         *news.Aggregator
 	translator  *translate.Worker
 	push        *push.Service
+	cache       *cache.Cache
+	bus         events.Bus
 	log         *slog.Logger
 	metrics     *Metrics
 	startedAt   time.Time
@@ -37,7 +41,7 @@ type API struct {
 }
 
 // New wires the HTTP API.
-func New(cfg *config.Config, st *store.Store, authSvc *auth.Service, agg *news.Aggregator, tw *translate.Worker, ps *push.Service, log *slog.Logger) *API {
+func New(cfg *config.Config, st *store.Store, authSvc *auth.Service, agg *news.Aggregator, tw *translate.Worker, ps *push.Service, cacheLayer *cache.Cache, bus events.Bus, log *slog.Logger) *API {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -48,6 +52,8 @@ func New(cfg *config.Config, st *store.Store, authSvc *auth.Service, agg *news.A
 		agg:         agg,
 		translator:  tw,
 		push:        ps,
+		cache:       cacheLayer,
+		bus:         bus,
 		log:         log,
 		metrics:     &Metrics{StartedAt: time.Now().UTC()},
 		startedAt:   time.Now().UTC(),
@@ -65,14 +71,22 @@ func (a *API) Router() http.Handler {
 	r.Use(a.cors)
 	r.Use(a.bodyLimit)
 	r.Use(a.rateLimitMiddleware)
+	r.Use(a.cacheMiddleware)
 
 	r.Get("/", a.handleRoot)
 	r.Get("/healthz", a.handleHealth)
 	r.Get("/readyz", a.handleReady)
 	r.Get("/metrics", a.handleMetrics)
-	r.Get("/docs", a.handleSwaggerUI)
-	r.Get("/docs/", a.handleSwaggerUI)
+	r.Get("/docs", a.handleGuide)
+	r.Get("/docs/", a.handleGuide)
+	r.Get("/docs/swagger", a.handleSwaggerUI)
 	r.Get("/docs/openapi.yaml", a.handleOpenAPI)
+	r.Get("/docs/postman_collection.json", a.handlePostmanCollection)
+	r.Get("/docs/postman_environment.json", a.handlePostmanEnvironment)
+	r.Get("/docs/env.example", a.handleEnvExample)
+	r.Get("/docs/LICENSE", a.handleLicense)
+	r.Get("/docs/assets/{file}", a.handleDocsAsset)
+	r.Get("/docs/{page}", a.handleGuide)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/health", a.handleHealth)
@@ -151,7 +165,9 @@ func (a *API) handleRoot(w http.ResponseWriter, r *http.Request) {
 		"version":   version.Version,
 		"build":     version.Info(),
 		"docs":      a.cfg.PublicBaseURL + "/docs",
+		"swagger":   a.cfg.PublicBaseURL + "/docs/swagger",
 		"openapi":   a.cfg.PublicBaseURL + "/docs/openapi.yaml",
+		"postman":   a.cfg.PublicBaseURL + "/docs/postman_collection.json",
 		"health":    a.cfg.PublicBaseURL + "/healthz",
 		"languages": []string{"ru", "en"},
 		"time":      time.Now().UTC(),
@@ -175,11 +191,34 @@ func (a *API) handleHealth(w http.ResponseWriter, r *http.Request) {
 func (a *API) handleReady(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
+	components := map[string]string{"postgres": "ok", "redis": "disabled", "kafka": "local"}
+	ready := true
 	if err := a.st.Ping(ctx); err != nil {
-		writeError(w, http.StatusServiceUnavailable, "not_ready", "database is unavailable")
-		return
+		components["postgres"] = "error: " + err.Error()
+		ready = false
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
+	if a.cache != nil && a.cache.Enabled() {
+		if err := a.cache.Healthy(ctx); err != nil {
+			components["redis"] = "error: " + err.Error()
+			ready = false
+		} else {
+			components["redis"] = "ok"
+		}
+	}
+	if a.bus != nil {
+		components["kafka"] = a.bus.Name()
+		if err := a.bus.Healthy(ctx); err != nil {
+			components["kafka"] = "error: " + err.Error()
+			ready = false
+		}
+	}
+	status := "ready"
+	code := http.StatusOK
+	if !ready {
+		status = "not_ready"
+		code = http.StatusServiceUnavailable
+	}
+	writeJSON(w, code, map[string]any{"status": status, "components": components})
 }
 
 // --- helpers ---

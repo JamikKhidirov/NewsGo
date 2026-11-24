@@ -2,8 +2,8 @@
 
 Базовый URL: `http://localhost:8080` (локально) или ваш домен.
 Префикс API: `/api/v1`.
-Интерактивная документация: `/docs` (Swagger UI), спецификация:
-`/docs/openapi.yaml`.
+Веб-документация: `/docs` (светлая и тёмная тема).
+Swagger UI: `/docs/swagger`, спецификация: `/docs/openapi.yaml`.
 
 ---
 
@@ -97,8 +97,11 @@ X-Admin-Token: <GONEWS_ADMIN_TOKEN>
 | `GET` | `/readyz` | Readiness (проверяет БД) |
 | `GET` | `/api/v1/health` | Health с версией |
 | `GET` | `/metrics` | Prometheus |
-| `GET` | `/docs` | Swagger UI |
+| `GET` | `/docs` | Веб-документация (светлая/тёмная тема) |
+| `GET` | `/docs/swagger` | Swagger UI (офлайн, без CDN) |
 | `GET` | `/docs/openapi.yaml` | OpenAPI 3.0 |
+| `GET` | `/docs/postman_collection.json` | Postman-коллекция |
+| `GET` | `/docs/postman_environment.json` | Postman-окружение |
 
 ```bash
 curl http://localhost:8080/api/v1/health
@@ -633,8 +636,11 @@ curl -X POST http://localhost:8080/api/v1/admin/ingest \
 
 Импортируйте два файла:
 
-- `docs/postman_collection.json`
-- `docs/postman_environment.json`
+- [`docs/api/postman_collection.json`](api/postman_collection.json)
+- [`docs/api/postman_environment.json`](api/postman_environment.json)
+
+Те же файлы отдаёт работающий сервис:
+`/docs/postman_collection.json` и `/docs/postman_environment.json`.
 
 Выберите окружение **GoNews Local**, выполните `Auth → Вход` — токены
 сохранятся в переменные коллекции автоматически. Дальше можно выполнять

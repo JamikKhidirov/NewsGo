@@ -70,7 +70,7 @@ func (s *Store) UpsertArticle(ctx context.Context, a model.Article, tags []model
 		VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(unique_hash) DO NOTHING`,
 		a.ID, a.SourceID, a.ExternalID, a.URL, a.CanonicalURL, a.Title, a.Summary, a.Content, a.ImageURL, a.Author,
-		a.Lang, a.Category, a.PublishedAt.UTC().Format(time.RFC3339Nano), a.FetchedAt.UTC().Format(time.RFC3339Nano), a.HotScore, a.UniqueHash)
+		a.Lang, a.Category, a.PublishedAt.UTC(), a.FetchedAt.UTC(), a.HotScore, a.UniqueHash)
 	if err != nil {
 		return "", false, err
 	}
@@ -90,7 +90,7 @@ func (s *Store) UpsertArticle(ctx context.Context, a model.Article, tags []model
 				external_id=CASE WHEN ?<>'' THEN ? ELSE external_id END
 			WHERE id=?`,
 			a.Title, a.Summary, a.Content, a.ImageURL, a.ImageURL, a.Author, a.Author,
-			a.PublishedAt.UTC().Format(time.RFC3339Nano), a.FetchedAt.UTC().Format(time.RFC3339Nano), a.HotScore, a.Category,
+			a.PublishedAt.UTC(), a.FetchedAt.UTC(), a.HotScore, a.Category,
 			a.ExternalID, a.ExternalID, articleID)
 		if err != nil {
 			return "", false, err
@@ -102,7 +102,7 @@ func (s *Store) UpsertArticle(ctx context.Context, a model.Article, tags []model
 		return "", false, err
 	}
 	for _, tag := range tags {
-		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO article_tags(article_id, tag_id) VALUES(?,?)`, articleID, tag.ID); err != nil {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO article_tags(article_id, tag_id) VALUES(?,?) ON CONFLICT DO NOTHING`, articleID, tag.ID); err != nil {
 			return "", false, err
 		}
 	}
@@ -156,8 +156,8 @@ SELECT a.id, a.source_id, a.external_id, a.url, a.canonical_url,
             WHEN EXISTS(SELECT 1 FROM translation_jobs tj WHERE tj.article_id=a.id AND tj.target_lang=? AND tj.status='failed') THEN 'failed'
             ELSE 'pending' END,
        COALESCE(tr.provider, ''),
-       EXISTS(SELECT 1 FROM likes l WHERE l.article_id = a.id AND l.user_id = ?),
-       EXISTS(SELECT 1 FROM bookmarks b WHERE b.article_id = a.id AND b.user_id = ?)
+       CASE WHEN EXISTS(SELECT 1 FROM likes l WHERE l.article_id = a.id AND l.user_id = ?) THEN 1 ELSE 0 END,
+       CASE WHEN EXISTS(SELECT 1 FROM bookmarks b WHERE b.article_id = a.id AND b.user_id = ?) THEN 1 ELSE 0 END
 FROM articles a
 LEFT JOIN article_translations tr ON tr.article_id = a.id AND tr.lang = ?
 `
@@ -213,7 +213,7 @@ func (s *Store) ListArticles(ctx context.Context, f ArticleFilter) ([]model.Loca
 	}
 	if !f.Since.IsZero() {
 		where = append(where, `a.published_at >= ?`)
-		args = append(args, f.Since.UTC().Format(time.RFC3339Nano))
+		args = append(args, f.Since.UTC())
 	}
 	if q := strings.TrimSpace(f.Query); q != "" {
 		like := "%" + strings.ToLower(q) + "%"
@@ -261,7 +261,7 @@ func (s *Store) ListArticles(ctx context.Context, f ArticleFilter) ([]model.Loca
 	}
 
 	countQuery := `SELECT COUNT(1) FROM articles a LEFT JOIN article_translations tr ON tr.article_id=a.id AND tr.lang=?` +
-		strings.Join(joins, "\n") + whereSQL
+		"\n" + strings.Join(joins, "\n") + whereSQL
 	countArgs := make([]any, 0, 1+len(args))
 	countArgs = append(countArgs, lang)
 	countArgs = append(countArgs, args...)
@@ -276,7 +276,7 @@ func scanLocalized(rows *sql.Rows) ([]model.LocalizedArticle, error) {
 	var out []model.LocalizedArticle
 	for rows.Next() {
 		var a model.LocalizedArticle
-		var published, fetched string
+		var published, fetched time.Time
 		var liked, bookmarked int
 		err := rows.Scan(
 			&a.ID, &a.SourceID, &a.ExternalID, &a.URL, &a.CanonicalURL,
@@ -288,8 +288,8 @@ func scanLocalized(rows *sql.Rows) ([]model.LocalizedArticle, error) {
 		if err != nil {
 			return nil, err
 		}
-		a.PublishedAt = parseTime(published)
-		a.FetchedAt = parseTime(fetched)
+		a.PublishedAt = published.UTC()
+		a.FetchedAt = fetched.UTC()
 		a.Liked = liked == 1
 		a.Bookmarked = bookmarked == 1
 		out = append(out, a)
@@ -368,7 +368,7 @@ func (s *Store) GetArticle(ctx context.Context, id, lang, userID string) (*model
 
 func (s *Store) GetArticleRaw(ctx context.Context, id string) (*model.Article, error) {
 	var a model.Article
-	var published, fetched string
+	var published, fetched time.Time
 	err := s.db.QueryRowContext(ctx, `SELECT id, source_id, external_id, url, canonical_url, title, summary, content,
 		image_url, author, lang, category, published_at, fetched_at, hot_score, likes_count, comments_count, views_count, unique_hash
 		FROM articles WHERE id=?`, id).Scan(
@@ -381,8 +381,8 @@ func (s *Store) GetArticleRaw(ctx context.Context, id string) (*model.Article, e
 	if err != nil {
 		return nil, err
 	}
-	a.PublishedAt = parseTime(published)
-	a.FetchedAt = parseTime(fetched)
+	a.PublishedAt = published.UTC()
+	a.FetchedAt = fetched.UTC()
 	return &a, nil
 }
 

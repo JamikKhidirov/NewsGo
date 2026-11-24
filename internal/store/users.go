@@ -30,7 +30,8 @@ func (s *Store) UpsertUser(ctx context.Context, u model.User, passwordHash strin
 // GetUserByEmail returns the user and its password hash.
 func (s *Store) GetUserByEmail(ctx context.Context, email string) (*model.User, string, error) {
 	var u model.User
-	var created, hash string
+	var created time.Time
+	var hash string
 	err := s.db.QueryRowContext(ctx, `SELECT id, email, password_hash, display_name, role, created_at FROM users WHERE email=?`,
 		strings.ToLower(strings.TrimSpace(email))).Scan(&u.ID, &u.Email, &hash, &u.DisplayName, &u.Role, &created)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -39,13 +40,13 @@ func (s *Store) GetUserByEmail(ctx context.Context, email string) (*model.User, 
 	if err != nil {
 		return nil, "", err
 	}
-	u.CreatedAt = parseTime(created)
+	u.CreatedAt = created.UTC()
 	return &u, hash, nil
 }
 
 func (s *Store) GetUserByID(ctx context.Context, id string) (*model.User, error) {
 	var u model.User
-	var created string
+	var created time.Time
 	err := s.db.QueryRowContext(ctx, `SELECT id, email, display_name, role, created_at FROM users WHERE id=?`, id).
 		Scan(&u.ID, &u.Email, &u.DisplayName, &u.Role, &created)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -54,7 +55,7 @@ func (s *Store) GetUserByID(ctx context.Context, id string) (*model.User, error)
 	if err != nil {
 		return nil, err
 	}
-	u.CreatedAt = parseTime(created)
+	u.CreatedAt = created.UTC()
 	return &u, nil
 }
 
@@ -106,7 +107,7 @@ func (s *Store) UpdateUserProfile(ctx context.Context, id, displayName string) e
 
 func (s *Store) SaveRefreshToken(ctx context.Context, id, userID, tokenHash, userAgent string, expiresAt time.Time) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO refresh_tokens(id, user_id, token_hash, user_agent, expires_at, created_at)
-		VALUES(?,?,?,?,?,?)`, id, userID, tokenHash, userAgent, expiresAt.UTC().Format(time.RFC3339Nano), now())
+		VALUES(?,?,?,?,?,?)`, id, userID, tokenHash, userAgent, expiresAt.UTC(), now())
 	return err
 }
 
@@ -118,8 +119,9 @@ func (s *Store) RotateRefreshToken(ctx context.Context, oldHash, newID, newHash,
 	}
 	defer tx.Rollback()
 
-	var userID, exp string
-	var revoked sql.NullString
+	var userID string
+	var exp time.Time
+	var revoked sql.NullTime
 	err = tx.QueryRowContext(ctx, `SELECT user_id, expires_at, revoked_at FROM refresh_tokens WHERE token_hash=?`, oldHash).
 		Scan(&userID, &exp, &revoked)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -131,14 +133,14 @@ func (s *Store) RotateRefreshToken(ctx context.Context, oldHash, newID, newHash,
 	if revoked.Valid {
 		return "", ErrNotFound
 	}
-	if parseTime(exp).Before(time.Now().UTC()) {
+	if exp.Before(time.Now().UTC()) {
 		return "", ErrNotFound
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE refresh_tokens SET revoked_at=? WHERE token_hash=?`, now(), oldHash); err != nil {
 		return "", err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO refresh_tokens(id, user_id, token_hash, user_agent, expires_at, created_at)
-		VALUES(?,?,?,?,?,?)`, newID, userID, newHash, userAgent, expiresAt.UTC().Format(time.RFC3339Nano), now()); err != nil {
+		VALUES(?,?,?,?,?,?)`, newID, userID, newHash, userAgent, expiresAt.UTC(), now()); err != nil {
 		return "", err
 	}
 	if err := tx.Commit(); err != nil {
@@ -184,13 +186,38 @@ func (s *Store) ListDevices(ctx context.Context, userID string) ([]model.Device,
 	var out []model.Device
 	for rows.Next() {
 		var d model.Device
-		var topics, created, seen string
+		var topics string
+		var created, seen time.Time
 		if err := rows.Scan(&d.ID, &d.UserID, &d.Token, &d.Platform, &d.Locale, &topics, &created, &seen); err != nil {
 			return nil, err
 		}
 		d.Topics = splitTopics(topics)
-		d.CreatedAt = parseTime(created)
-		d.LastSeenAt = parseTime(seen)
+		d.CreatedAt = created.UTC()
+		d.LastSeenAt = seen.UTC()
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// AllDevices returns every active device with its platform.
+func (s *Store) AllDevices(ctx context.Context) ([]model.Device, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id, user_id, token, platform, locale, topics, created_at, last_seen_at
+		FROM devices WHERE enabled=1 ORDER BY last_seen_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []model.Device
+	for rows.Next() {
+		var d model.Device
+		var topics string
+		var created, seen time.Time
+		if err := rows.Scan(&d.ID, &d.UserID, &d.Token, &d.Platform, &d.Locale, &topics, &created, &seen); err != nil {
+			return nil, err
+		}
+		d.Topics = splitTopics(topics)
+		d.CreatedAt = created.UTC()
+		d.LastSeenAt = seen.UTC()
 		out = append(out, d)
 	}
 	return out, rows.Err()

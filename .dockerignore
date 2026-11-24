@@ -4,9 +4,6 @@
 bin
 dist
 data
-docs
-*.md
-!README.md
 .env
 .env.*
 !.env.example

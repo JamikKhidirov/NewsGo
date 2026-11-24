@@ -1,16 +1,20 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"net"
 	"net/http"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/gonews/gonews/internal/auth"
+	"github.com/gonews/gonews/internal/metrics"
 	"github.com/gonews/gonews/internal/model"
 	"github.com/gonews/gonews/internal/platform"
 )
@@ -78,11 +82,19 @@ func (a *API) accessLog(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		sw := &statusWriter{ResponseWriter: w}
+		metrics.HTTPInFlight.Inc()
+		defer metrics.HTTPInFlight.Dec()
 		next.ServeHTTP(sw, r)
 		if sw.status == 0 {
 			sw.status = http.StatusOK
 		}
-		a.metrics.Observe(sw.status)
+		route := chi.RouteContext(r.Context()).RoutePattern()
+		if route == "" {
+			route = "unmatched"
+		}
+		metrics.HTTPRequests.WithLabelValues(r.Method, route, strconv.Itoa(sw.status)).Inc()
+		metrics.HTTPDuration.WithLabelValues(r.Method, route).Observe(time.Since(start).Seconds())
+		metrics.HTTPResponseBytes.WithLabelValues(route).Add(float64(sw.bytes))
 		if r.URL.Path != "/healthz" && r.URL.Path != "/readyz" && r.URL.Path != "/metrics" {
 			a.log.Info("http request",
 				"method", r.Method,
@@ -117,7 +129,7 @@ func (a *API) cors(next http.Handler) http.Handler {
 			}
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept, Accept-Language, X-Admin-Token, X-Request-ID")
-			w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID, X-RateLimit-Limit, X-RateLimit-Remaining")
+			w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID, X-Cache, X-RateLimit-Limit, X-RateLimit-Remaining")
 			w.Header().Set("Access-Control-Max-Age", "86400")
 		}
 		if r.Method == http.MethodOptions {
@@ -250,7 +262,7 @@ func (rl *rateLimiter) allow(key string) (bool, int) {
 
 func (a *API) rateLimitMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ok, remaining := a.limiter.allow(clientIP(r))
+		ok, remaining := a.allow(r, a.limiter, "global:"+clientIP(r), a.limiter.limit)
 		w.Header().Set("X-RateLimit-Limit", itoa(a.limiter.limit))
 		w.Header().Set("X-RateLimit-Remaining", itoa(remaining))
 		if !ok {
@@ -264,7 +276,7 @@ func (a *API) rateLimitMiddleware(next http.Handler) http.Handler {
 
 func (a *API) authRateLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ok, remaining := a.authLimiter.allow(clientIP(r))
+		ok, remaining := a.allow(r, a.authLimiter, "auth:"+clientIP(r), 20)
 		w.Header().Set("X-RateLimit-Remaining", itoa(remaining))
 		if !ok {
 			w.Header().Set("Retry-After", "60")
@@ -273,6 +285,138 @@ func (a *API) authRateLimit(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// allow uses Redis when available (shared across replicas) and falls back to
+// the in-process limiter if Redis is unavailable.
+func (a *API) allow(r *http.Request, local *rateLimiter, key string, limit int) (bool, int) {
+	if limit <= 0 {
+		return true, 0
+	}
+	if a.cache != nil && a.cache.Enabled() {
+		n, err := a.cache.Incr(r.Context(), key, time.Minute)
+		if err == nil {
+			return n <= int64(limit), limit - int(n)
+		}
+	}
+	return local.allow(key)
+}
+
+// --- response cache ---
+
+type cacheRecorder struct {
+	header http.Header
+	status int
+	body   bytes.Buffer
+}
+
+func newCacheRecorder() *cacheRecorder {
+	return &cacheRecorder{header: make(http.Header)}
+}
+
+func (c *cacheRecorder) Header() http.Header { return c.header }
+
+func (c *cacheRecorder) WriteHeader(status int) {
+	if c.status == 0 {
+		c.status = status
+	}
+}
+
+func (c *cacheRecorder) Write(b []byte) (int, error) {
+	if c.status == 0 {
+		c.status = http.StatusOK
+	}
+	return c.body.Write(b)
+}
+
+func (a *API) cacheMiddleware(next http.Handler) http.Handler {
+	if a.cache == nil || !a.cache.Enabled() || a.cache.TTL() <= 0 {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !cacheableRequest(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		key := "http:" + r.URL.RequestURI() + "|" + r.Header.Get("Accept-Language")
+		if raw, ok := a.cache.GetBytes(r.Context(), key); ok {
+			if status, ctype, body, ok := decodeCached(raw); ok {
+				if ctype != "" {
+					w.Header().Set("Content-Type", ctype)
+				}
+				w.Header().Set("X-Cache", "HIT")
+				w.WriteHeader(status)
+				_, _ = w.Write(body)
+				return
+			}
+		}
+
+		rec := newCacheRecorder()
+		next.ServeHTTP(rec, r)
+		if rec.status == 0 {
+			rec.status = http.StatusOK
+		}
+		for k, values := range rec.header {
+			for _, v := range values {
+				w.Header().Add(k, v)
+			}
+		}
+		if rec.status == http.StatusOK && rec.body.Len() > 0 && rec.body.Len() < 1<<20 {
+			a.cache.SetBytes(r.Context(), key, encodeCached(rec.status, rec.header.Get("Content-Type"), rec.body.Bytes()), 0)
+			w.Header().Set("X-Cache", "MISS")
+		} else {
+			w.Header().Set("X-Cache", "BYPASS")
+		}
+		w.WriteHeader(rec.status)
+		_, _ = w.Write(rec.body.Bytes())
+	})
+}
+
+func cacheableRequest(r *http.Request) bool {
+	if r.Method != http.MethodGet || strings.TrimSpace(r.Header.Get("Authorization")) != "" {
+		return false
+	}
+	p := r.URL.Path
+	switch p {
+	case "/api/v1/news", "/api/v1/news/trending", "/api/v1/search",
+		"/api/v1/categories", "/api/v1/tags", "/api/v1/sources":
+		return true
+	}
+	if strings.HasPrefix(p, "/api/v1/news/") {
+		rest := strings.TrimPrefix(p, "/api/v1/news/")
+		return rest != "" && !strings.Contains(rest, "/")
+	}
+	if strings.HasPrefix(p, "/api/v1/tags/") {
+		rest := strings.TrimPrefix(p, "/api/v1/tags/")
+		return rest != "" && !strings.Contains(rest, "/")
+	}
+	return false
+}
+
+func encodeCached(status int, contentType string, body []byte) []byte {
+	out := make([]byte, 0, len(body)+64)
+	out = strconv.AppendInt(out, int64(status), 10)
+	out = append(out, '\n')
+	out = append(out, contentType...)
+	out = append(out, '\n')
+	out = append(out, body...)
+	return out
+}
+
+func decodeCached(raw []byte) (int, string, []byte, bool) {
+	i := bytes.IndexByte(raw, '\n')
+	if i < 0 {
+		return 0, "", nil, false
+	}
+	j := bytes.IndexByte(raw[i+1:], '\n')
+	if j < 0 {
+		return 0, "", nil, false
+	}
+	status, err := strconv.Atoi(string(raw[:i]))
+	if err != nil {
+		return 0, "", nil, false
+	}
+	return status, string(raw[i+1 : i+1+j]), raw[i+1+j+1:], true
 }
 
 func clientIP(r *http.Request) string {

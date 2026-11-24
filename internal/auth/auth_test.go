@@ -3,21 +3,16 @@ package auth_test
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/gonews/gonews/internal/auth"
-	"github.com/gonews/gonews/internal/store"
+	"github.com/gonews/gonews/internal/testutil"
 )
 
 func newService(t *testing.T) *auth.Service {
 	t.Helper()
-	st, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "auth.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { st.Close() })
+	st := testutil.OpenStore(t)
 	return auth.NewService(st, "test-secret", time.Minute, time.Hour, func(email string) string {
 		if email == "admin@example.com" {
 			return "admin"

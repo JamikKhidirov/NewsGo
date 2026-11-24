@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,7 +17,7 @@ import (
 	"github.com/gonews/gonews/internal/httpapi"
 	"github.com/gonews/gonews/internal/news"
 	"github.com/gonews/gonews/internal/push"
-	"github.com/gonews/gonews/internal/store"
+	"github.com/gonews/gonews/internal/testutil"
 	"github.com/gonews/gonews/internal/translate"
 )
 
@@ -25,11 +25,7 @@ func newTestHandler(t *testing.T) http.Handler {
 	t.Helper()
 	ctx := context.Background()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	st, err := store.Open(ctx, filepath.Join(t.TempDir(), "api.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { st.Close() })
+	st := testutil.OpenStore(t)
 
 	cfg := &config.Config{
 		Env:                "test",
@@ -51,8 +47,12 @@ func newTestHandler(t *testing.T) http.Handler {
 	}
 	translator := translate.New(nil, "", "", time.Second, 1000, log)
 	worker := translate.NewWorker(st, translator, 1, log)
-	pushSvc := push.NewService(st, nil, false, log)
-	return httpapi.New(cfg, st, authSvc, agg, worker, pushSvc, log).Router()
+	delivery, err := push.NewDelivery("", "", "", "", "", "", false, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pushSvc := push.NewService(st, nil, delivery, false, "gonews.notifications", log)
+	return httpapi.New(cfg, st, authSvc, agg, worker, pushSvc, nil, nil, log).Router()
 }
 
 func request(t *testing.T, h http.Handler, method, path, body, token, adminToken string) *httptest.ResponseRecorder {
@@ -132,7 +132,34 @@ func TestPublicAndAuthFlow(t *testing.T) {
 	}
 
 	if rec := request(t, h, http.MethodGet, "/docs", "", "", ""); rec.Code != http.StatusOK {
+		t.Fatalf("guide: %d", rec.Code)
+	} else {
+		body := rec.Body.String()
+		for _, want := range []string{"data-theme-toggle", "/docs/assets/guide.css", "Обзор и быстрый старт"} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("guide is missing %q", want)
+			}
+		}
+	}
+	if rec := request(t, h, http.MethodGet, "/docs/api", "", "", ""); rec.Code != http.StatusOK {
+		t.Fatalf("guide page: %d", rec.Code)
+	}
+	if rec := request(t, h, http.MethodGet, "/docs/swagger", "", "", ""); rec.Code != http.StatusOK {
 		t.Fatalf("swagger: %d", rec.Code)
+	} else if !strings.Contains(rec.Body.String(), "/docs/assets/swagger-ui-bundle.js") {
+		t.Fatal("swagger must use the embedded bundle")
+	}
+	if rec := request(t, h, http.MethodGet, "/docs/assets/guide.css", "", "", ""); rec.Code != http.StatusOK {
+		t.Fatalf("guide css: %d", rec.Code)
+	}
+	if rec := request(t, h, http.MethodGet, "/docs/postman_collection.json", "", "", ""); rec.Code != http.StatusOK {
+		t.Fatalf("postman collection: %d", rec.Code)
+	}
+	if rec := request(t, h, http.MethodGet, "/docs/env.example", "", "", ""); rec.Code != http.StatusOK {
+		t.Fatalf("env example: %d", rec.Code)
+	}
+	if rec := request(t, h, http.MethodGet, "/docs/does-not-exist", "", "", ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown guide page must be 404, got %d", rec.Code)
 	}
 	if rec := request(t, h, http.MethodGet, "/docs/openapi.yaml", "", "", ""); rec.Code != http.StatusOK {
 		t.Fatalf("openapi: %d", rec.Code)

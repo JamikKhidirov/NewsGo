@@ -32,6 +32,7 @@ type Message struct {
 
 // SendResult reports delivery attempts.
 type SendResult struct {
+	Queued  int      `json:"queued"`
 	Targets int      `json:"targets"`
 	Sent    int      `json:"sent"`
 	Failed  int      `json:"failed"`
@@ -47,8 +48,8 @@ type Sender interface {
 // sender is used so local development still works end-to-end.
 func NewSender(projectID, serviceAccountFile string, log *slog.Logger) (Sender, error) {
 	if projectID == "" || serviceAccountFile == "" {
-		log.Info("FCM is not configured; push messages will be logged only")
-		return &logSender{log: log}, nil
+		log.Info("FCM is not configured; Android push messages will be logged only")
+		return &logSender{log: log, platform: "android"}, nil
 	}
 	sa, err := loadServiceAccount(serviceAccountFile)
 	if err != nil {
@@ -68,10 +69,13 @@ func NewSender(projectID, serviceAccountFile string, log *slog.Logger) (Sender, 
 	}, nil
 }
 
-type logSender struct{ log *slog.Logger }
+type logSender struct {
+	log      *slog.Logger
+	platform string
+}
 
 func (s *logSender) Send(ctx context.Context, tokens []string, msg Message) (SendResult, error) {
-	s.log.Info("push (dry-run)", "title", msg.Title, "body", msg.Body, "targets", len(tokens), "data", msg.Data)
+	s.log.Info("push (dry-run)", "platform", s.platform, "title", msg.Title, "body", msg.Body, "targets", len(tokens), "data", msg.Data)
 	return SendResult{Targets: len(tokens), Sent: len(tokens)}, nil
 }
 

@@ -63,7 +63,7 @@ func (s *Store) GetTagBySlug(ctx context.Context, slug string) (*model.Tag, erro
 }
 
 func (s *Store) FollowTag(ctx context.Context, userID, tagID string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO follows(user_id, tag_id, created_at) VALUES(?,?,?)`, userID, tagID, now())
+	_, err := s.db.ExecContext(ctx, `INSERT INTO follows(user_id, tag_id, created_at) VALUES(?,?,?) ON CONFLICT DO NOTHING`, userID, tagID, now())
 	return err
 }
 
@@ -105,7 +105,7 @@ func (s *Store) LikeArticle(ctx context.Context, userID, articleID string) (int,
 		return 0, err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO likes(user_id, article_id, created_at) VALUES(?,?,?)`, userID, articleID, now()); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO likes(user_id, article_id, created_at) VALUES(?,?,?) ON CONFLICT DO NOTHING`, userID, articleID, now()); err != nil {
 		return 0, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE articles SET likes_count=(SELECT COUNT(1) FROM likes WHERE article_id=?) WHERE id=?`, articleID, articleID); err != nil {
@@ -152,7 +152,7 @@ func (s *Store) UnlikeArticle(ctx context.Context, userID, articleID string) (in
 // --- bookmarks ---
 
 func (s *Store) AddBookmark(ctx context.Context, userID, articleID string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO bookmarks(user_id, article_id, created_at) VALUES(?,?,?)`, userID, articleID, now())
+	_, err := s.db.ExecContext(ctx, `INSERT INTO bookmarks(user_id, article_id, created_at) VALUES(?,?,?) ON CONFLICT DO NOTHING`, userID, articleID, now())
 	if err != nil {
 		return err
 	}
@@ -197,14 +197,15 @@ func (s *Store) ListComments(ctx context.Context, articleID string, page, limit 
 	var out []model.Comment
 	for rows.Next() {
 		var c model.Comment
-		var parent, deleted sql.NullString
-		var created, updated string
+		var parent sql.NullString
+		var deleted sql.NullTime
+		var created, updated time.Time
 		if err := rows.Scan(&c.ID, &c.ArticleID, &c.UserID, &parent, &c.Body, &created, &updated, &deleted, &c.AuthorName); err != nil {
 			return nil, 0, err
 		}
 		c.ParentID = nullStr(parent)
-		c.CreatedAt = parseTime(created)
-		c.UpdatedAt = parseTime(updated)
+		c.CreatedAt = created.UTC()
+		c.UpdatedAt = updated.UTC()
 		if deleted.Valid {
 			c.Deleted = true
 			c.Body = ""
@@ -318,7 +319,7 @@ func (s *Store) CountComments(ctx context.Context) (int, error) {
 
 // PurgeOlderThan deletes articles older than the given time (retention).
 func (s *Store) PurgeOlderThan(ctx context.Context, before time.Time) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM articles WHERE published_at < ?`, before.UTC().Format(time.RFC3339Nano))
+	res, err := s.db.ExecContext(ctx, `DELETE FROM articles WHERE published_at < ?`, before.UTC())
 	if err != nil {
 		return 0, err
 	}

@@ -1,0 +1,387 @@
+/* Swagger UI theming: layout fixes plus a full dark palette. */
+
+.swagger-page {
+  background: var(--bg);
+}
+
+.swagger-wrap {
+  max-width: 1460px;
+  margin: 0 auto;
+  padding: 14px 22px 64px;
+}
+
+.swagger-ui {
+  color: var(--fg);
+}
+
+.swagger-ui .topbar {
+  display: none;
+}
+
+.swagger-ui .info {
+  margin: 26px 0;
+}
+
+.swagger-ui .info .title,
+.swagger-ui .info h1,
+.swagger-ui .info h2,
+.swagger-ui .info h3,
+.swagger-ui .info h4,
+.swagger-ui .info h5 {
+  color: var(--fg);
+}
+
+.swagger-ui .info .title small {
+  background: var(--bg-subtle);
+  color: var(--fg-muted);
+}
+
+.swagger-ui .info .title small pre {
+  background: transparent;
+  color: var(--fg-muted);
+}
+
+.swagger-ui .info p,
+.swagger-ui .info li,
+.swagger-ui .info a {
+  color: var(--fg-muted);
+}
+
+.swagger-ui .info a {
+  color: var(--accent);
+}
+
+.swagger-ui .scheme-container {
+  margin: 0 0 18px;
+  padding: 14px 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.swagger-ui .opblock-tag {
+  color: var(--fg);
+  border-bottom-color: var(--border);
+}
+
+.swagger-ui .opblock-tag small {
+  color: var(--fg-muted);
+}
+
+.swagger-ui .opblock {
+  background: var(--bg-elevated);
+  border-color: var(--border);
+  border-radius: 9px;
+}
+
+.swagger-ui .opblock .opblock-summary {
+  border-bottom-color: transparent;
+}
+
+.swagger-ui .opblock .opblock-summary-path,
+.swagger-ui .opblock .opblock-summary-path a {
+  color: var(--fg);
+}
+
+.swagger-ui .opblock .opblock-summary-description {
+  color: var(--fg-muted);
+}
+
+.swagger-ui .opblock-body {
+  background: var(--bg-elevated);
+}
+
+.swagger-ui .opblock-description-wrapper p,
+.swagger-ui .opblock-external-docs-wrapper p,
+.swagger-ui .opblock-title_normal p {
+  color: var(--fg-muted);
+}
+
+.swagger-ui .opblock-description-wrapper h4,
+.swagger-ui .opblock-title_normal h4 {
+  color: var(--fg);
+}
+
+.swagger-ui .parameter__name,
+.swagger-ui .parameter__type,
+.swagger-ui .parameter__in,
+.swagger-ui .parameter__extension {
+  color: var(--fg-muted);
+}
+
+.swagger-ui .parameter__name.required::after {
+  color: var(--danger);
+}
+
+.swagger-ui table thead tr td,
+.swagger-ui table thead tr th {
+  color: var(--fg-muted);
+  border-color: var(--border);
+}
+
+.swagger-ui table tbody tr td {
+  border-color: var(--border);
+}
+
+.swagger-ui .response-col_status {
+  color: var(--fg);
+}
+
+.swagger-ui .response-col_description,
+.swagger-ui .response-col_links {
+  color: var(--fg-muted);
+}
+
+.swagger-ui .tab li button {
+  color: var(--fg-muted);
+}
+
+.swagger-ui .tab li.active button {
+  color: var(--accent);
+}
+
+.swagger-ui .btn {
+  color: var(--fg);
+  border-color: var(--border-strong);
+  background: transparent;
+}
+
+.swagger-ui .btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.swagger-ui .btn.authorize {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.swagger-ui .btn.authorize svg {
+  fill: var(--accent);
+}
+
+.swagger-ui .btn.execute {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.swagger-ui .btn.execute:hover {
+  background: var(--accent-strong);
+  color: #fff;
+}
+
+.swagger-ui select,
+.swagger-ui input[type="text"],
+.swagger-ui input[type="email"],
+.swagger-ui input[type="password"],
+.swagger-ui input[type="search"],
+.swagger-ui textarea {
+  background: var(--bg-elevated);
+  color: var(--fg);
+  border: 1px solid var(--border-strong);
+}
+
+.swagger-ui input::placeholder,
+.swagger-ui textarea::placeholder {
+  color: var(--fg-faint);
+}
+
+.swagger-ui .highlight-code,
+.swagger-ui .microlight,
+.swagger-ui .opblock-body pre.microlight {
+  background: var(--pre-bg) !important;
+  color: var(--pre-fg) !important;
+  border-radius: 8px;
+}
+
+.swagger-ui .markdown code,
+.swagger-ui .renderedMarkdown code {
+  background: var(--bg-code);
+  color: var(--fg);
+}
+
+.swagger-ui section.models {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.swagger-ui section.models h4,
+.swagger-ui section.models h5 {
+  color: var(--fg);
+}
+
+.swagger-ui section.models .model-container {
+  background: var(--bg);
+  border-color: var(--border);
+}
+
+.swagger-ui .model-box {
+  background: var(--bg);
+}
+
+.swagger-ui .model-title,
+.swagger-ui .model {
+  color: var(--fg);
+}
+
+.swagger-ui .property.primitive {
+  color: var(--fg);
+}
+
+.swagger-ui .prop-type {
+  color: var(--accent);
+}
+
+.swagger-ui .prop-format {
+  color: var(--fg-faint);
+}
+
+.swagger-ui .model-example {
+  background: var(--bg);
+}
+
+.swagger-ui .example {
+  background: var(--bg-elevated);
+}
+
+.swagger-ui .responses-inner {
+  background: transparent;
+}
+
+.swagger-ui .response-col_links {
+  color: var(--fg-muted);
+}
+
+.swagger-ui .copy-to-clipboard {
+  background: var(--bg-subtle);
+}
+
+.swagger-ui .copy-to-clipboard button {
+  background: transparent;
+}
+
+.swagger-ui .model-toggle:after {
+  background-color: transparent;
+}
+
+html[data-theme="dark"] .swagger-ui .model-toggle:after {
+  filter: invert(0.85);
+}
+
+html[data-theme="dark"] .swagger-ui .expand-operation svg,
+html[data-theme="dark"] .swagger-ui .models-control svg,
+html[data-theme="dark"] .swagger-ui .model-box-control svg {
+  fill: #c9d5e4;
+}
+
+html[data-theme="dark"] .swagger-ui .opblock.opblock-get {
+  background: rgba(92, 200, 234, 0.07);
+  border-color: #2b5d70;
+}
+
+html[data-theme="dark"] .swagger-ui .opblock.opblock-get .opblock-summary-method {
+  background: #2b7d97;
+}
+
+html[data-theme="dark"] .swagger-ui .opblock.opblock-post {
+  background: rgba(85, 205, 145, 0.07);
+  border-color: #2f6b4f;
+}
+
+html[data-theme="dark"] .swagger-ui .opblock.opblock-post .opblock-summary-method {
+  background: #2f7d58;
+}
+
+html[data-theme="dark"] .swagger-ui .opblock.opblock-put {
+  background: rgba(230, 175, 80, 0.08);
+  border-color: #775a25;
+}
+
+html[data-theme="dark"] .swagger-ui .opblock.opblock-put .opblock-summary-method {
+  background: #8a6828;
+}
+
+html[data-theme="dark"] .swagger-ui .opblock.opblock-delete {
+  background: rgba(255, 123, 114, 0.07);
+  border-color: #7a3733;
+}
+
+html[data-theme="dark"] .swagger-ui .opblock.opblock-delete .opblock-summary-method {
+  background: #a33f38;
+}
+
+html[data-theme="dark"] .swagger-ui .opblock.opblock-patch {
+  background: rgba(160, 200, 120, 0.07);
+  border-color: #4f6b34;
+}
+
+html[data-theme="dark"] .swagger-ui .opblock.opblock-patch .opblock-summary-method {
+  background: #5d7d3c;
+}
+
+html[data-theme="dark"] .swagger-ui .opblock.opblock-head,
+html[data-theme="dark"] .swagger-ui .opblock.opblock-options {
+  background: rgba(160, 170, 190, 0.06);
+  border-color: #3a4659;
+}
+
+html[data-theme="dark"] .swagger-ui .opblock.opblock-head .opblock-summary-method,
+html[data-theme="dark"] .swagger-ui .opblock.opblock-options .opblock-summary-method {
+  background: #46536a;
+}
+
+html[data-theme="dark"] .swagger-ui .opblock-summary-method {
+  color: #fff;
+}
+
+html[data-theme="dark"] .swagger-ui .opblock-summary-path__deprecated {
+  color: #ff9b93;
+}
+
+html[data-theme="dark"] .swagger-ui .model-deprecated-warning {
+  color: #ff9b93;
+}
+
+html[data-theme="dark"] .swagger-ui .loading-container .loading::after {
+  color: var(--fg-muted);
+}
+
+html[data-theme="dark"] .swagger-ui .dialog-ux .modal-ux {
+  background: var(--bg-elevated);
+  border-color: var(--border);
+}
+
+html[data-theme="dark"] .swagger-ui .dialog-ux .modal-ux-header h3,
+html[data-theme="dark"] .swagger-ui .dialog-ux .modal-ux-content p,
+html[data-theme="dark"] .swagger-ui .dialog-ux .modal-ux-content label {
+  color: var(--fg);
+}
+
+html[data-theme="dark"] .swagger-ui .dialog-ux .modal-ux-header {
+  border-bottom-color: var(--border);
+}
+
+html[data-theme="dark"] .swagger-ui .dialog-ux .modal-ux-content .auth-container {
+  border-bottom-color: var(--border);
+}
+
+html[data-theme="dark"] .swagger-ui .auth-btn-wrapper .btn-done {
+  color: var(--fg);
+}
+
+.swagger-error {
+  max-width: 640px;
+  margin: 40px auto;
+  padding: 18px 20px;
+  border: 1px solid var(--danger);
+  border-radius: 10px;
+  background: var(--bg-elevated);
+  color: var(--fg);
+}
+
+@media (max-width: 640px) {
+  .swagger-wrap {
+    padding: 10px 12px 48px;
+  }
+}

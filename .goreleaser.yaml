@@ -79,6 +79,6 @@ release:
     Готовые бинарники ниже. Для Windows скачайте
     `gonews_{{ .Version }}_windows_amd64.zip` и запустите `gonews.exe`.
   footer: |
-    **Полная документация:** https://github.com/gonews/gonews/tree/main/docs
+    **Полная документация:** https://github.com/JamikKhidirov/NewsGo/tree/main/docs
 
     Собрано из коммита `{{ .FullCommit }}`.

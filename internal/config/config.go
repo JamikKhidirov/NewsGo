@@ -18,7 +18,11 @@ type Config struct {
 	HTTPAddr      string
 	PublicBaseURL string
 
-	DatabasePath string
+	DatabaseURL string
+
+	RedisURL    string
+	CacheTTL    time.Duration
+	CachePrefix string
 
 	JWTSecret   string
 	AccessTTL   time.Duration
@@ -46,9 +50,21 @@ type Config struct {
 	LibreTranslateURL  string
 	LingvaURL          string
 
+	KafkaBrokers   []string
+	KafkaEnabled   bool
+	KafkaPushTopic string
+	KafkaNewsTopic string
+	KafkaGroup     string
+
 	PushEnabled           bool
+	PushWorkers           int
 	FCMProjectID          string
 	FCMServiceAccountFile string
+	APNSKeyFile           string
+	APNSKeyID             string
+	APNSTeamID            string
+	APNSTopic             string
+	APNSSandbox           bool
 	PushBroadcast         bool
 	PushInterval          time.Duration
 	PushMinScore          float64
@@ -63,7 +79,10 @@ func Load() (*Config, error) {
 		LogLevel:      env("GONEWS_LOG_LEVEL", "info"),
 		HTTPAddr:      env("GONEWS_HTTP_ADDR", ":8080"),
 		PublicBaseURL: env("GONEWS_PUBLIC_BASE_URL", "http://localhost:8080"),
-		DatabasePath:  env("GONEWS_DB_PATH", "data/gonews.db"),
+		DatabaseURL:   env("GONEWS_DATABASE_URL", "postgres://gonews:gonews@127.0.0.1:5432/gonews?sslmode=disable"),
+		RedisURL:      env("GONEWS_REDIS_URL", ""),
+		CacheTTL:      envDuration("GONEWS_CACHE_TTL", 30*time.Second),
+		CachePrefix:   env("GONEWS_CACHE_PREFIX", "gonews"),
 
 		JWTSecret:   env("GONEWS_JWT_SECRET", "dev-insecure-secret-change-me"),
 		AccessTTL:   envDuration("GONEWS_ACCESS_TTL", 30*time.Minute),
@@ -91,9 +110,20 @@ func Load() (*Config, error) {
 		LibreTranslateURL:  env("GONEWS_LIBRETRANSLATE_URL", "https://libretranslate.com"),
 		LingvaURL:          env("GONEWS_LINGVA_URL", "https://lingva.ml"),
 
-		PushEnabled:           envBool("GONEWS_PUSH_ENABLED", false),
+		KafkaBrokers:   splitList(env("GONEWS_KAFKA_BROKERS", "")),
+		KafkaPushTopic: env("GONEWS_KAFKA_PUSH_TOPIC", "gonews.notifications"),
+		KafkaNewsTopic: env("GONEWS_KAFKA_NEWS_TOPIC", "gonews.news"),
+		KafkaGroup:     env("GONEWS_KAFKA_GROUP", "gonews-push"),
+
+		PushEnabled:           envBool("GONEWS_PUSH_ENABLED", true),
+		PushWorkers:           envInt("GONEWS_PUSH_WORKERS", 4),
 		FCMProjectID:          env("GONEWS_FCM_PROJECT_ID", ""),
 		FCMServiceAccountFile: env("GONEWS_FCM_SERVICE_ACCOUNT_FILE", ""),
+		APNSKeyFile:           env("GONEWS_APNS_KEY_FILE", ""),
+		APNSKeyID:             env("GONEWS_APNS_KEY_ID", ""),
+		APNSTeamID:            env("GONEWS_APNS_TEAM_ID", ""),
+		APNSTopic:             env("GONEWS_APNS_TOPIC", "com.gonews.app"),
+		APNSSandbox:           envBool("GONEWS_APNS_SANDBOX", false),
 		PushBroadcast:         envBool("GONEWS_PUSH_BROADCAST", true),
 		PushInterval:          envDuration("GONEWS_PUSH_INTERVAL", 30*time.Minute),
 		PushMinScore:          envFloat("GONEWS_PUSH_MIN_SCORE", 20),
@@ -102,6 +132,13 @@ func Load() (*Config, error) {
 	if cfg.TranslateWorkers < 1 {
 		cfg.TranslateWorkers = 1
 	}
+	if cfg.PushWorkers < 1 {
+		cfg.PushWorkers = 1
+	}
+	if cfg.CacheTTL < 0 {
+		cfg.CacheTTL = 0
+	}
+	cfg.KafkaEnabled = len(cfg.KafkaBrokers) > 0
 	if cfg.ProviderLimit < 1 || cfg.ProviderLimit > 100 {
 		cfg.ProviderLimit = 25
 	}

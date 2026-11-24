@@ -3,22 +3,17 @@ package store_test
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/gonews/gonews/internal/model"
 	"github.com/gonews/gonews/internal/store"
+	"github.com/gonews/gonews/internal/testutil"
 )
 
 func newStore(t *testing.T) *store.Store {
 	t.Helper()
-	st, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { st.Close() })
-	return st
+	return testutil.OpenStore(t)
 }
 
 func seed(t *testing.T, st *store.Store) (model.Source, model.Tag) {

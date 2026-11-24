@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,6 +23,10 @@ func main() {
 }
 
 func run() int {
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		return healthcheck()
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("configuration error", "error", err)
@@ -56,7 +62,7 @@ func run() int {
 			"addr", cfg.HTTPAddr,
 			"env", cfg.Env,
 			"docs", cfg.PublicBaseURL+"/docs",
-			"db", cfg.DatabasePath,
+			"database", "postgres",
 		)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
@@ -79,5 +85,30 @@ func run() int {
 		return 1
 	}
 	log.Info("server stopped")
+	return 0
+}
+
+// healthcheck is used by the distroless container HEALTHCHECK.
+func healthcheck() int {
+	addr := os.Getenv("GONEWS_HTTP_ADDR")
+	if addr == "" {
+		addr = ":8080"
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		port = "8080"
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("http://" + net.JoinHostPort(strings.Trim(host, "[]"), port) + "/healthz")
+	if err != nil {
+		return 1
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 1
+	}
 	return 0
 }

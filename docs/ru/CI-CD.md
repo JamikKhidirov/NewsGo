@@ -42,19 +42,21 @@ git tag v1.0.0 && git push origin v1.0.0
 
 ### 2.1 Что проверяется
 
-Job `test` (ubuntu-latest):
+Job `test` (ubuntu-latest) с сервисным контейнером `postgres:16-alpine`:
 
 1. `gofmt -l .` — любой неформатированный файл ломает сборку.
 2. `go vet ./...`.
-3. `go test -race -count=1 ./...`.
+3. `go test -race -count=1 ./...` — интеграционные тесты идут в отдельные
+   схемы PostgreSQL (`GONEWS_TEST_DATABASE_URL`).
 4. `CGO_ENABLED=0 go build ./...`.
 
 Job `build-windows` (windows-latest):
 
 1. `go build -trimpath -ldflags "-s -w" -o bin/gonews.exe ./cmd/server`.
-2. Запуск бинарника с временной БД и `INGEST_ON_START=false`.
-3. Проверка `GET /api/v1/health`.
-4. Загрузка `gonews.exe` как artifact.
+2. `docker run` поднимает `postgres:16-alpine` и ждёт `pg_isready`.
+3. Запуск бинарника с `GONEWS_DATABASE_URL` и `INGEST_ON_START=false`.
+4. Проверка `GET /api/v1/health`, `/readyz` и `/api/v1/news?limit=1`.
+5. Загрузка `gonews.exe` как artifact.
 
 ### 2.2 Локальный запуск тех же проверок
 
@@ -63,10 +65,14 @@ Windows PowerShell:
 ```powershell
 gofmt -l .
 go vet ./...
+$env:GONEWS_TEST_DATABASE_URL = "postgres://gonews:gonews@127.0.0.1:5432/gonews?sslmode=disable"
 go test -count=1 ./...
 $env:CGO_ENABLED = "0"
 go build -trimpath -o bin\gonews.exe .\cmd\server
 ```
+
+Перед тестами поднимите PostgreSQL (`docker compose up -d postgres`).
+Без доступной базы интеграционные тесты пропускаются, а не падают.
 
 Linux/macOS:
 
@@ -184,17 +190,22 @@ ghcr.io/<owner>/<repo>:1.0
 ghcr.io/<owner>/<repo>:latest     # для default branch
 ```
 
-Локально:
-
-```bash
-docker build -t gonews:dev .
-docker run --rm -p 8080:8080 -v gonews-data:/data gonews:dev
-```
-
-Compose:
+Локально (нужны PostgreSQL, Redis и Kafka — проще через Compose):
 
 ```bash
 docker compose up -d --build
+```
+
+Отдельный контейнер только с API требует внешних PostgreSQL/Redis/Kafka:
+
+```bash
+docker build -t gonews:dev .
+docker run --rm -p 8080:8080 \
+  -e GONEWS_DATABASE_URL="postgres://gonews:gonews@host.docker.internal:5432/gonews?sslmode=disable" \
+  -e GONEWS_REDIS_URL="redis://host.docker.internal:6379/0" \
+  -e GONEWS_KAFKA_BROKERS="host.docker.internal:9092" \
+  -e GONEWS_JWT_SECRET="local-secret" \
+  gonews:dev
 ```
 
 ### 4.1 Права
