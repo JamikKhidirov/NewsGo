@@ -19,7 +19,7 @@
       "title": "p99 latency",
       "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "refId": "A", "expr": "histogram_quantile(0.99, sum(rate(gonews_http_request_duration_seconds_bucket[5m])) by (le))" }],
+      "targets": [{ "refId": "A", "expr": "histogram_quantile(0.99, sum(rate(gonews_http_request_duration_seconds_bucket{route!~\"/api/v1/admin/.*\"}[5m])) by (le))" }],
       "fieldConfig": { "defaults": { "unit": "s", "decimals": 3, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.5 }, { "color": "red", "value": 1 }] } }, "overrides": [] }
     },
     {
@@ -27,7 +27,7 @@
       "title": "5xx ratio",
       "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "targets": [{ "refId": "A", "expr": "sum(rate(gonews_http_requests_total{status=~\"5..\"}[5m])) / clamp_min(sum(rate(gonews_http_requests_total[5m])), 0.001)" }],
+      "targets": [{ "refId": "A", "expr": "(sum(rate(gonews_http_requests_total{status=~\"5..\"}[5m])) / clamp_min(sum(rate(gonews_http_requests_total[5m])), 0.001)) or vector(0)" }],
       "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 2, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.01 }, { "color": "red", "value": 0.05 }] } }, "overrides": [] }
     },
     {
@@ -52,9 +52,9 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
-        { "refId": "A", "expr": "histogram_quantile(0.50, sum(rate(gonews_http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p50" },
-        { "refId": "B", "expr": "histogram_quantile(0.95, sum(rate(gonews_http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p95" },
-        { "refId": "C", "expr": "histogram_quantile(0.99, sum(rate(gonews_http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "p99" }
+        { "refId": "A", "expr": "histogram_quantile(0.50, sum(rate(gonews_http_request_duration_seconds_bucket{route!~\"/api/v1/admin/.*\"}[5m])) by (le))", "legendFormat": "p50" },
+        { "refId": "B", "expr": "histogram_quantile(0.95, sum(rate(gonews_http_request_duration_seconds_bucket{route!~\"/api/v1/admin/.*\"}[5m])) by (le))", "legendFormat": "p95" },
+        { "refId": "C", "expr": "histogram_quantile(0.99, sum(rate(gonews_http_request_duration_seconds_bucket{route!~\"/api/v1/admin/.*\"}[5m])) by (le))", "legendFormat": "p99" }
       ],
       "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 0, "lineWidth": 2, "showPoints": "never" } }, "overrides": [] }
     },
@@ -99,9 +99,9 @@
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 19 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
-        { "refId": "A", "expr": "sum(rate(gonews_ingest_articles_total{result=\"inserted\"}[10m]))", "legendFormat": "inserted/s" },
-        { "refId": "B", "expr": "sum(rate(gonews_ingest_articles_total{result=\"updated\"}[10m]))", "legendFormat": "updated/s" },
-        { "refId": "C", "expr": "sum(rate(gonews_provider_errors_total[10m]))", "legendFormat": "provider errors/s" }
+        { "refId": "A", "expr": "sum(rate(gonews_ingest_articles_total{result=\"inserted\"}[10m])) or vector(0)", "legendFormat": "inserted/s" },
+        { "refId": "B", "expr": "sum(rate(gonews_ingest_articles_total{result=\"updated\"}[10m])) or vector(0)", "legendFormat": "updated/s" },
+        { "refId": "C", "expr": "sum(rate(gonews_provider_errors_total[10m])) or vector(0)", "legendFormat": "provider errors/s" }
       ],
       "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2, "showPoints": "never" } }, "overrides": [] }
     },

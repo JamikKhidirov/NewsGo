@@ -70,13 +70,13 @@ sum(rate(gonews_http_requests_total[5m]))
 sum(rate(gonews_http_requests_total{status=~"5.."}[5m]))
   / clamp_min(sum(rate(gonews_http_requests_total[5m])), 0.001)
 
-# p95 и p99
-histogram_quantile(0.95, sum(rate(gonews_http_request_duration_seconds_bucket[5m])) by (le))
-histogram_quantile(0.99, sum(rate(gonews_http_request_duration_seconds_bucket[5m])) by (le))
+# p95 и p99 (без админских batch-маршрутов: ингест и purge длятся десятки секунд)
+histogram_quantile(0.95, sum(rate(gonews_http_request_duration_seconds_bucket{route!~"/api/v1/admin/.*"}[5m])) by (le))
+histogram_quantile(0.99, sum(rate(gonews_http_request_duration_seconds_bucket{route!~"/api/v1/admin/.*"}[5m])) by (le))
 
 # самые медленные маршруты
 topk(5, histogram_quantile(0.99,
-  sum(rate(gonews_http_request_duration_seconds_bucket[5m])) by (route, le)))
+  sum(rate(gonews_http_request_duration_seconds_bucket{route!~"/api/v1/admin/.*"}[5m])) by (route, le)))
 
 # cache hit ratio
 sum(rate(gonews_cache_operations_total{op="get",result="hit"}[5m]))

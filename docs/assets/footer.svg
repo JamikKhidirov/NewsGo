@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="120" viewBox="0 0 1200 120" role="img" aria-label="GoNews">
+  <defs>
+    <linearGradient id="fbg" x1="0" y1="0" x2="1200" y2="120" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#06B6D4"/>
+      <stop offset="0.48" stop-color="#1E40AF"/>
+      <stop offset="1" stop-color="#0B1220"/>
+    </linearGradient>
+    <linearGradient id="fwave" x1="0" y1="0" x2="1200" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.14"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.02"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="120" fill="url(#fbg)"/>
+  <path d="M0 92 Q150 68 300 92 T600 92 T900 92 T1200 92 T1500 92 T1800 92 T2100 92 T2400 92 V120 H0 Z" fill="url(#fwave)">
+    <animateTransform attributeName="transform" type="translate" from="0 0" to="-1200 0" dur="24s" repeatCount="indefinite"/>
+  </path>
+
+  <text x="600" y="58" text-anchor="middle" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif" font-size="24" font-weight="600" fill="#FFFFFF">GoNews — новости, перевод и доставка в одном Go-бинарнике</text>
+  <text x="600" y="88" text-anchor="middle" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif" font-size="14" letter-spacing="0.6" fill="#BAE6FD">MIT · Go 1.26 · PostgreSQL 16 · Redis 7 · Kafka 3.9</text>
+</svg>

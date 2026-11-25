@@ -36,7 +36,7 @@ type guidePageDef struct {
 }
 
 var guidePages = []guidePageDef{
-	{Slug: "overview", Title: "Обзор и быстрый старт", File: "README.md", Root: true},
+	{Slug: "overview", Title: "Обзор и быстрый старт", File: "ru/OVERVIEW.md"},
 	{Slug: "architecture", Title: "Архитектура", File: "ru/ARCHITECTURE.md"},
 	{Slug: "api", Title: "REST API", File: "ru/API.md"},
 	{Slug: "deployment", Title: "Развёртывание", File: "ru/DEPLOYMENT.md"},

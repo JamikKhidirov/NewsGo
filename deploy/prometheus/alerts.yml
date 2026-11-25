@@ -23,7 +23,7 @@ groups:
           description: "Current 5xx ratio is {{ $value | humanizePercentage }}."
 
       - alert: GoNewsHighLatencyP99
-        expr: histogram_quantile(0.99, sum(rate(gonews_http_request_duration_seconds_bucket[5m])) by (le)) > 1
+        expr: histogram_quantile(0.99, sum(rate(gonews_http_request_duration_seconds_bucket{route!~"/api/v1/admin/.*"}[5m])) by (le)) > 1
         for: 10m
         labels:
           severity: warning

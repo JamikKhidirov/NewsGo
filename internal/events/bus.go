@@ -7,6 +7,7 @@ package events
 import (
 	"context"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 
@@ -110,6 +111,17 @@ func (k *Kafka) consume(ctx context.Context) {
 		for _, fetchErr := range fetches.Errors() {
 			k.log.Warn("kafka fetch error", "topic", fetchErr.Topic, "error", fetchErr.Err)
 		}
+		fetches.EachPartition(func(p kgo.FetchTopicPartition) {
+			if len(p.Records) == 0 {
+				return
+			}
+			last := p.Records[len(p.Records)-1].Offset
+			lag := p.HighWatermark - last - 1
+			if lag < 0 {
+				lag = 0
+			}
+			metrics.KafkaLag.WithLabelValues(p.Topic, strconv.Itoa(int(p.Partition))).Set(float64(lag))
+		})
 		fetches.EachRecord(func(rec *kgo.Record) {
 			k.mu.Lock()
 			handler := k.handlers[rec.Topic]

@@ -49,14 +49,14 @@ Job `test` (ubuntu-latest) с сервисным контейнером `postgre
 3. `go test -race -count=1 ./...` — интеграционные тесты идут в отдельные
    схемы PostgreSQL (`GONEWS_TEST_DATABASE_URL`).
 4. `CGO_ENABLED=0 go build ./...`.
+5. Smoke-тест: бинарник запускается на `127.0.0.1:18080` с сервисным
+   PostgreSQL, проверяются `/healthz`, `/readyz` и `/api/v1/news?limit=1`.
 
 Job `build-windows` (windows-latest):
 
 1. `go build -trimpath -ldflags "-s -w" -o bin/gonews.exe ./cmd/server`.
-2. `docker run` поднимает `postgres:16-alpine` и ждёт `pg_isready`.
-3. Запуск бинарника с `GONEWS_DATABASE_URL` и `INGEST_ON_START=false`.
-4. Проверка `GET /api/v1/health`, `/readyz` и `/api/v1/news?limit=1`.
-5. Загрузка `gonews.exe` как artifact.
+2. `bin\gonews.exe version` — проверка, что `.exe` запускается.
+3. Загрузка `gonews.exe` как artifact.
 
 ### 2.2 Локальный запуск тех же проверок
 
@@ -291,7 +291,7 @@ GoReleaser формирует changelog из коммитов и группир�
 | GoReleaser: `no commits found` | Мелкий clone | `fetch-depth: 0` |
 | Docker push 403 | Нет `packages: write` | Проверьте `permissions` |
 | Образ не пуллится | Приватный пакет | `docker login ghcr.io` |
-| Windows smoke test не стартует | Порт занят | В CI используется `18080`; локально выберите другой |
+| Smoke-тест CI не стартует | Порт `18080` занят или PostgreSQL не готов | Проверьте сервисный контейнер и свободный порт |
 | `GONEWS_JWT_SECRET must be set` | `ENV=production` с dev-секретом | Задайте секрет |
 
 ---

@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="260" viewBox="0 0 1200 260" role="img" aria-label="GoNews — Russian-first news aggregation backend">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="260" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1220"/>
+      <stop offset="0.52" stop-color="#1E40AF"/>
+      <stop offset="1" stop-color="#06B6D4"/>
+    </linearGradient>
+    <linearGradient id="wave1" x1="0" y1="0" x2="1200" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.03"/>
+    </linearGradient>
+    <linearGradient id="wave2" x1="0" y1="0" x2="1200" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#38BDF8" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.04"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(1010 24) rotate(90) scale(250)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#38BDF8" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#38BDF8" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glow2" cx="0" cy="0" r="1" gradientTransform="translate(240 260) rotate(-90) scale(220)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22D3EE" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#22D3EE" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="260" fill="url(#bg)"/>
+  <circle cx="1010" cy="24" r="250" fill="url(#glow)"/>
+  <circle cx="240" cy="260" r="220" fill="url(#glow2)"/>
+
+  <g opacity="0.55">
+    <path d="M0 214 Q150 186 300 214 T600 214 T900 214 T1200 214 T1500 214 T1800 214 T2100 214 T2400 214 V260 H0 Z" fill="url(#wave1)">
+      <animateTransform attributeName="transform" type="translate" from="0 0" to="-1200 0" dur="26s" repeatCount="indefinite"/>
+    </path>
+  </g>
+  <path d="M0 232 Q150 206 300 232 T600 232 T900 232 T1200 232 T1500 232 T1800 232 T2100 232 T2400 232 V260 H0 Z" fill="url(#wave2)">
+    <animateTransform attributeName="transform" type="translate" from="0 0" to="-1200 0" dur="18s" repeatCount="indefinite"/>
+  </path>
+
+  <text x="72" y="126" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif" font-size="84" font-weight="700" letter-spacing="-2" fill="#FFFFFF">GoNews</text>
+  <text x="76" y="170" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif" font-size="21" letter-spacing="0.4" fill="#C7E6FF">Russian-first news aggregation backend</text>
+
+  <g transform="translate(78 197)" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif" font-size="15" fill="#BAE6FD">
+    <circle cx="4" cy="-5" r="4" fill="#38BDF8">
+      <animate attributeName="opacity" values="0.2;1;0.2" dur="2.4s" begin="0s" repeatCount="indefinite"/>
+    </circle>
+    <text x="18" y="0">26 sources without API keys</text>
+    <circle cx="228" cy="-5" r="4" fill="#38BDF8">
+      <animate attributeName="opacity" values="0.2;1;0.2" dur="2.4s" begin="0.4s" repeatCount="indefinite"/>
+    </circle>
+    <text x="242" y="0">47 REST methods</text>
+    <circle cx="382" cy="-5" r="4" fill="#38BDF8">
+      <animate attributeName="opacity" values="0.2;1;0.2" dur="2.4s" begin="0.8s" repeatCount="indefinite"/>
+    </circle>
+    <text x="396" y="0">PostgreSQL · Redis · Kafka</text>
+  </g>
+</svg>

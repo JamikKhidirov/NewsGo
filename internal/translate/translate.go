@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gonews/gonews/internal/metrics"
 	"github.com/gonews/gonews/internal/model"
 	"github.com/gonews/gonews/internal/store"
 )
@@ -464,21 +465,25 @@ func (w *Worker) processJob(ctx context.Context, job model.TranslationJob) bool 
 	article, err := w.st.GetArticleRaw(ctx, job.ArticleID)
 	if err != nil {
 		_ = w.st.FailTranslationJob(ctx, job.ID, job.Attempts+1, "article not found")
+		metrics.TranslationJobs.WithLabelValues("failed").Inc()
 		return false
 	}
 	if article.Lang == job.TargetLang {
 		_ = w.st.CompleteTranslationJob(ctx, job.ID)
+		metrics.TranslationJobs.WithLabelValues("original").Inc()
 		return true
 	}
 
 	title, provider, err := w.tr.Translate(ctx, article.Title, article.Lang, job.TargetLang)
 	if err != nil {
 		_ = w.st.FailTranslationJob(ctx, job.ID, job.Attempts+1, err.Error())
+		metrics.TranslationJobs.WithLabelValues("failed").Inc()
 		return false
 	}
 	summary, _, err := w.tr.Translate(ctx, article.Summary, article.Lang, job.TargetLang)
 	if err != nil {
 		_ = w.st.FailTranslationJob(ctx, job.ID, job.Attempts+1, err.Error())
+		metrics.TranslationJobs.WithLabelValues("failed").Inc()
 		return false
 	}
 	content := summary
@@ -486,17 +491,20 @@ func (w *Worker) processJob(ctx context.Context, job model.TranslationJob) bool 
 		translated, _, cErr := w.tr.Translate(ctx, article.Content, article.Lang, job.TargetLang)
 		if cErr != nil {
 			_ = w.st.FailTranslationJob(ctx, job.ID, job.Attempts+1, cErr.Error())
+			metrics.TranslationJobs.WithLabelValues("failed").Inc()
 			return false
 		}
 		content = translated
 	}
 	if err := w.st.SaveTranslation(ctx, article.ID, job.TargetLang, title, summary, content, provider); err != nil {
 		_ = w.st.FailTranslationJob(ctx, job.ID, job.Attempts+1, err.Error())
+		metrics.TranslationJobs.WithLabelValues("failed").Inc()
 		return false
 	}
 	if err := w.st.CompleteTranslationJob(ctx, job.ID); err != nil {
 		w.log.Warn("complete translation job", "error", err)
 	}
+	metrics.TranslationJobs.WithLabelValues("translated").Inc()
 	w.log.Debug("article translated", "article", article.ID, "lang", job.TargetLang, "provider", provider)
 	return true
 }

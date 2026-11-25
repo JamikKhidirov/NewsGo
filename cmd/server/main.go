@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -23,8 +24,14 @@ func main() {
 }
 
 func run() int {
-	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
-		return healthcheck()
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "healthcheck":
+			return healthcheck()
+		case "version":
+			fmt.Println(version.Info())
+			return 0
+		}
 	}
 
 	cfg, err := config.Load()

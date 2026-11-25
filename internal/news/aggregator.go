@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gonews/gonews/internal/langdetect"
+	"github.com/gonews/gonews/internal/metrics"
 	"github.com/gonews/gonews/internal/model"
 	"github.com/gonews/gonews/internal/store"
 )
@@ -142,12 +143,14 @@ func (a *Aggregator) Run(ctx context.Context) (*Stats, error) {
 			pr.Error = r.err.Error()
 			stats.Errors++
 			stats.Providers[slug] = pr
+			metrics.ProviderErrors.WithLabelValues(slug).Inc()
 			a.log.Warn("provider fetch failed", "source", slug, "error", r.err)
 			continue
 		}
 		successfulProviders++
 		stats.Fetched += len(r.items)
 		stats.Providers[slug] = pr
+		metrics.ProviderFetched.WithLabelValues(slug).Add(float64(len(r.items)))
 
 		for _, item := range r.items {
 			def, ok := defBySlug[item.SourceSlug]
@@ -202,15 +205,21 @@ func (a *Aggregator) Run(ctx context.Context) (*Stats, error) {
 		if inserted {
 			stats.Inserted++
 			pr.Inserted++
+			metrics.IngestArticles.WithLabelValues("inserted").Inc()
 		} else {
 			stats.Updated++
 			pr.Updated++
+			metrics.IngestArticles.WithLabelValues("updated").Inc()
 		}
 		stats.Providers[n.providerSlug] = pr
 	}
 
 	stats.FinishedAt = time.Now().UTC()
 	stats.DurationMS = stats.FinishedAt.Sub(started).Milliseconds()
+
+	metrics.IngestRuns.Inc()
+	metrics.IngestDuration.Observe(stats.FinishedAt.Sub(started).Seconds())
+	metrics.IngestLastFinished.Set(float64(stats.FinishedAt.Unix()))
 
 	status := "ok"
 	switch {
